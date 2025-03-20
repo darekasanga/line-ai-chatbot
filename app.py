@@ -9,7 +9,7 @@ app = Flask(__name__)
 
 # GitHub repository details
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # Set your token in Vercel environment variables
-GITHUB_REPO = "darekasanga/file-uploader"    # Replace with your repository name
+GITHUB_REPO = "darekasanga/line-ai-chatbot"    # Replace with your repository name
 GITHUB_BRANCH = "main"  # Branch name
 GITHUB_API = "https://api.github.com"
 GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/"

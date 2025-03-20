@@ -56,3 +56,4 @@ def list_files():
             return jsonify({"status": "success", "files": [], "message": "No logs found"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+@app.route('/files/<filename>', methods=['GET'])

@@ -55,18 +55,33 @@ def upload_to_github(filename, content, branch_name="file"):
     # Ensure the branch exists
     create_branch(branch_name)
 
-    # Upload the file
+    # Construct the GitHub API URL
     url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={branch_name}"
     encoded_content = base64.b64encode(content).decode("utf-8")
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
+
+    # Check if the file already exists to get the SHA
+    get_response = requests.get(url, headers=headers)
+    sha = None
+    if get_response.status_code == 200:
+        sha = get_response.json().get("sha")
+        print(f"File '{filename}' already exists. SHA: {sha}")
+
+    # Prepare the data payload
     data = {
-        "message": f"Add {filename} to {branch_name}",
+        "message": f"Add or update {filename} to {branch_name}",
         "content": encoded_content,
         "branch": branch_name
     }
+
+    # If the file exists, add the SHA to the data
+    if sha:
+        data["sha"] = sha
+
+    # Upload or update the file
     response = requests.put(url, headers=headers, data=json.dumps(data))
     print("GitHub API Response:", response.json())  # Debugging
     return response
@@ -94,17 +109,27 @@ def upload_file():
 
         # Original file upload to the "file" branch
         original_response = upload_to_github(file.filename, content, GITHUB_BRANCH)
-        if original_response.status_code != 201:
-            return jsonify({"status": "error", "message": original_response.json()}), 500
         original_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{file.filename}"
+
+        # Handle response and check if the upload succeeded
+        if original_response.status_code == 201:
+            print(f"Successfully uploaded original file: {original_url}")
+        else:
+            print(f"Failed to upload original file: {original_response.json()}")
+            return jsonify({"status": "error", "message": original_response.json()}), 500
 
         # Downsized file upload to the "file" branch with a different filename
         downsized_content = downsize_image(content)
         downsized_filename = f"downsized_{file.filename}"
         downsized_response = upload_to_github(downsized_filename, downsized_content, GITHUB_BRANCH)
-        if downsized_response.status_code != 201:
-            return jsonify({"status": "error", "message": downsized_response.json()}), 500
         downsized_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{downsized_filename}"
+
+        # Handle response for downsized file
+        if downsized_response.status_code == 201:
+            print(f"Successfully uploaded downsized file: {downsized_url}")
+        else:
+            print(f"Failed to upload downsized file: {downsized_response.json()}")
+            return jsonify({"status": "error", "message": downsized_response.json()}), 500
 
         return jsonify({
             "status": "success",
@@ -141,38 +166,3 @@ def home():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-# Upload file to GitHub on the "file" branch
-def upload_to_github(filename, content, branch_name="file"):
-    # Ensure the branch exists
-    create_branch(branch_name)
-
-    # Construct the GitHub API URL
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={branch_name}"
-    encoded_content = base64.b64encode(content).decode("utf-8")
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-
-    # Check if the file already exists to get the SHA
-    get_response = requests.get(url, headers=headers)
-    sha = None
-    if get_response.status_code == 200:
-        sha = get_response.json().get("sha")
-        print(f"File '{filename}' already exists. SHA: {sha}")
-
-    # Prepare the data payload
-    data = {
-        "message": f"Add or update {filename} to {branch_name}",
-        "content": encoded_content,
-        "branch": branch_name
-    }
-
-    # If the file exists, add the SHA to the data
-    if sha:
-        data["sha"] = sha
-
-    # Upload or update the file
-    response = requests.put(url, headers=headers, data=json.dumps(data))
-    print("GitHub API Response:", response.json())  # Debugging
-    return response

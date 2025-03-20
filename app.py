@@ -38,15 +38,22 @@ def create_branch(branch_name):
 def upload_to_github(filename, content):
     create_branch(GITHUB_BRANCH)
     url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
+    print(f"Uploading to URL: {url}")
     encoded_content = base64.b64encode(content).decode("utf-8")
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
+
     get_response = requests.get(url, headers=headers)
+    print(f"GET Response Status: {get_response.status_code}")
+    print(f"GET Response Text: {get_response.text}")
+
     sha = None
     if get_response.status_code == 200:
         sha = get_response.json().get("sha")
+        print(f"Existing file SHA: {sha}")
+
     data = {
         "message": f"Add or update {filename} to {GITHUB_BRANCH}",
         "content": encoded_content,
@@ -54,7 +61,10 @@ def upload_to_github(filename, content):
     }
     if sha:
         data["sha"] = sha
+
     response = requests.put(url, headers=headers, data=json.dumps(data))
+    print(f"Upload Response Status: {response.status_code}")
+    print(f"Upload Response Text: {response.text}")
     return response
 
 # Resize the image with adaptive settings to limit size to 300 KB

@@ -1,10 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Upload Page</title>
-    <script src="/static/render_upload.js"></script>
+    <title>Upload a File</title>
 </head>
 <body>
-    <div id="upload-container">Loading...</div>
+    <h2>Upload a File</h2>
+    <form method="POST" enctype="multipart/form-data" action="/upload">
+        <input type="file" name="file" required>
+        <button type="submit">Upload</button>
+    </form>
+    <button onclick="location.href='/list'">View Uploaded Files</button>
 </body>
 </html>

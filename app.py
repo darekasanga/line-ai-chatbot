@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, redirect, url_for
+from flask import Flask, request, jsonify
 import os
 import json
 import base64
@@ -74,6 +74,17 @@ def delete_from_github(filename):
         }
         response = requests.delete(url, headers=headers, data=json.dumps(data))
         return response
+    else:
+        return jsonify({"status": "error", "message": "File not found"}), 404
+
+# Delete file endpoint
+@app.route('/delete/<filename>', methods=['DELETE'])
+def delete_file(filename):
+    response = delete_from_github(filename)
+    if response.status_code == 200:
+        return jsonify({"status": "success", "message": f"Deleted {filename}"})
+    else:
+        return jsonify({"status": "error", "message": response.json().get("message", "Failed to delete file")})
 
 # Resize the image
 def downsize_image(image_data, max_size=(800, 800)):
@@ -90,14 +101,16 @@ def upload_file():
         return "No file part", 400
     file = request.files['file']
     content = file.read()
+
     original_response = upload_to_github(file.filename, content)
     downsized_content = downsize_image(content)
     downsized_filename = f"downsized_{file.filename}"
     downsized_response = upload_to_github(downsized_filename, downsized_content)
+
     return f'''
     <h3>Upload Complete!</h3>
-    <p>Original File URL: <a href="{GITHUB_RAW_URL}{file.filename}">{file.filename}</a></p>
-    <p>Downsized File URL: <a href="{GITHUB_RAW_URL}{downsized_filename}">{downsized_filename}</a></p>
+    <p>Original URL: <a href="{GITHUB_RAW_URL}{file.filename}">{file.filename}</a></p>
+    <p>Downsized URL: <a href="{GITHUB_RAW_URL}{downsized_filename}">{downsized_filename}</a></p>
     <button onclick="location.href='/upload.html'">Back to Upload</button>
     <button onclick="location.href='/list'">View Uploaded Files</button>
     '''
@@ -114,30 +127,15 @@ def list_files():
     for file in files:
         filename = file['name']
         original_url = f"{GITHUB_RAW_URL}{filename}"
-        
-        # Check if the file is downsized
-        if filename.startswith("downsized_"):
-            downsized_url = original_url
-            original_filename = filename.replace("downsized_", "")
-            original_url = f"{GITHUB_RAW_URL}{original_filename}"
-            file_list += f'''
-            <li>
-                <p>Original: <a href="{original_url}">{original_filename}</a></p>
-                <p>Downsized: <a href="{downsized_url}">{filename}</a></p>
-                <button onclick="deleteFile('{filename}')">Delete</button>
-            </li>
-            '''
-        else:
-            # If it's an original file without a downsized counterpart
-            downsized_filename = f"downsized_{filename}"
-            downsized_url = f"{GITHUB_RAW_URL}{downsized_filename}"
-            file_list += f'''
-            <li>
-                <p>Original: <a href="{original_url}">{filename}</a></p>
-                <p>Downsized: <a href="{downsized_url}">{downsized_filename}</a></p>
-                <button onclick="deleteFile('{filename}')">Delete</button>
-            </li>
-            '''
+        downsized_filename = f"downsized_{filename}"
+        downsized_url = f"{GITHUB_RAW_URL}{downsized_filename}"
+        file_list += f'''
+        <li>
+            <p>Original: <a href="{original_url}">{filename}</a></p>
+            <p>Downsized: <a href="{downsized_url}">{downsized_filename}</a></p>
+            <button onclick="deleteFile('{filename}')">Delete</button>
+        </li>
+        '''
     return f'''
     <h2>Uploaded Files</h2>
     <ul>{file_list}</ul>
@@ -145,10 +143,34 @@ def list_files():
     <script>
     function deleteFile(filename) {{
         fetch('/delete/' + filename, {{ method: 'DELETE' }})
-            .then(response => location.reload());
+            .then(response => response.json())
+            .then(data => {{
+                if (data.status === "success") {{
+                    alert("File deleted successfully!");
+                    location.reload();
+                }} else {{
+                    alert("Failed to delete file: " + data.message);
+                }}
+            }})
+            .catch(error => {{
+                alert("Error during file deletion: " + error.message);
+            }});
     }}
     </script>
     '''
+
+# Upload page
+@app.route('/upload.html')
+def upload_page():
+    return '''
+    <h2>Upload a File</h2>
+    <form method="POST" enctype="multipart/form-data" action="/upload">
+        <input type="file" name="file" required>
+        <button type="submit">Upload</button>
+    </form>
+    <button onclick="location.href='/list'">View Uploaded Files</button>
+    '''
+
 # Home page
 @app.route('/')
 def home():

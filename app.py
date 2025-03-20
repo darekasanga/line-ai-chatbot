@@ -141,3 +141,38 @@ def home():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+# Upload file to GitHub on the "file" branch
+def upload_to_github(filename, content, branch_name="file"):
+    # Ensure the branch exists
+    create_branch(branch_name)
+
+    # Construct the GitHub API URL
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={branch_name}"
+    encoded_content = base64.b64encode(content).decode("utf-8")
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    # Check if the file already exists to get the SHA
+    get_response = requests.get(url, headers=headers)
+    sha = None
+    if get_response.status_code == 200:
+        sha = get_response.json().get("sha")
+        print(f"File '{filename}' already exists. SHA: {sha}")
+
+    # Prepare the data payload
+    data = {
+        "message": f"Add or update {filename} to {branch_name}",
+        "content": encoded_content,
+        "branch": branch_name
+    }
+
+    # If the file exists, add the SHA to the data
+    if sha:
+        data["sha"] = sha
+
+    # Upload or update the file
+    response = requests.put(url, headers=headers, data=json.dumps(data))
+    print("GitHub API Response:", response.json())  # Debugging
+    return response

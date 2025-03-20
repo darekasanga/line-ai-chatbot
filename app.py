@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 # GitHub repository details
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO = "username/Vercel-GitHub-Uploader"  # Replace with your actual username and repo name
+GITHUB_REPO = "darekasanga/line-ai-chatbot"  # Replace with your actual username and repo name
 GITHUB_BRANCH = "main"
 GITHUB_API = "https://api.github.com"
 GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/"

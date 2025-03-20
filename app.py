@@ -143,3 +143,54 @@ def home():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+# List uploaded files
+@app.route('/list')
+def list_files():
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    response = requests.get(url, headers=headers)
+
+    if response.status_code != 200:
+        return f"Error fetching file list: {response.json().get('message', 'Unknown error')}", 500
+
+    files = response.json()
+
+    if not isinstance(files, list):
+        return "No files uploaded", 404
+
+    file_list = ''
+    for file in files:
+        filename = file['name']
+        original_url = f"{GITHUB_RAW_URL}{filename}"
+        downsized_filename = f"downsized_{filename}"
+        downsized_url = f"{GITHUB_RAW_URL}{downsized_filename}"
+        file_list += f'''
+        <li>
+            <p>Original: <a href="{original_url}">{filename}</a></p>
+            <p>Downsized: <a href="{downsized_url}">{downsized_filename}</a></p>
+            <button onclick="deleteFile('{filename}')">Delete</button>
+        </li>
+        '''
+
+    return f'''
+    <h2>Uploaded Files</h2>
+    <ul>{file_list}</ul>
+    <button onclick="location.href='/upload.html'">Back to Upload</button>
+    <script>
+    function deleteFile(filename) {{
+        fetch('/delete/' + encodeURIComponent(filename), {{ method: 'DELETE' }})
+            .then(response => response.json())
+            .then(data => {{
+                if (data.status === "success") {{
+                    alert("File deleted successfully!");
+                    location.reload();
+                }} else {{
+                    alert("Failed to delete file: " + data.message);
+                }}
+            }})
+            .catch(error => {{
+                alert("Error during file deletion: " + error.message);
+            }});
+    }}
+    </script>
+    '''

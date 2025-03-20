@@ -1,101 +1,86 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import os
 import requests
-import json
+import base64
+from io import BytesIO
+from PIL import Image
 
 app = Flask(__name__)
 
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_REPO = "darekasanga/line-ai-chatbot"
+GITHUB_BRANCH = "file"
+GITHUB_API = "https://api.github.com"
+GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/"
 
 @app.route('/')
 def home():
-    return "LINE Flex Messaging API is working!"
+    return "Hello, GitHub File Uploader!"
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    body = request.get_json()
-    print(f"Received body: {body}")
+@app.route('/upload.html')
+def upload_page():
+    return render_template("upload.html")
 
-    if body and "events" in body:
-        for event in body["events"]:
-            if event["type"] == "message" and event["message"]["type"] == "text":
-                reply_token = event["replyToken"]
-                user_message = event["message"]["text"]
-                reply_flex_message(reply_token, user_message)
-    return "OK"
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    file = request.files['file']
+    content = file.read()
+    filename = file.filename
 
-def reply_flex_message(reply_token, message_text):
-    flex_message = {
-        "type": "flex",
-        "altText": "Upload File",
-        "contents": {
-            "type": "bubble",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": "Upload a File",
-                        "weight": "bold",
-                        "size": "xl",
-                        "margin": "md"
-                    },
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "contents": [
-                            {
-                                "type": "text",
-                                "text": "Select a file to upload:",
-                                "size": "sm",
-                                "margin": "md"
-                            },
-                            {
-                                "type": "button",
-                                "action": {
-                                    "type": "uri",
-                                    "label": "Upload",
-                                    "uri": "https://line-ai-chatbot.vercel.app/upload.html"
-                                },
-                                "style": "primary",
-                                "color": "#1DB446",
-                                "margin": "sm"
-                            },
-                            {
-                                "type": "button",
-                                "action": {
-                                    "type": "uri",
-                                    "label": "View Uploaded Files",
-                                    "uri": "https://line-ai-chatbot.vercel.app/list"
-                                },
-                                "style": "secondary",
-                                "margin": "sm"
-                            }
-                        ],
-                        "margin": "md"
-                    }
-                ]
-            }
-        }
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    encoded_content = base64.b64encode(content).decode("utf-8")
+
+    data = {
+        "message": f"Add or update {filename}",
+        "content": encoded_content,
+        "branch": GITHUB_BRANCH
     }
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
+    response = requests.put(url, headers=headers, json=data)
+    return jsonify(response.json())
+
+@app.route('/list')
+def list_files():
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    response = requests.get(url, headers=headers)
+    files = response.json()
+
+    file_list = ''
+    for file in files:
+        filename = file['name']
+        file_url = f"{GITHUB_RAW_URL}{filename}"
+        file_list += f'<li>{filename} - <a href="{file_url}" target="_blank">View</a> <button onclick="deleteFile(\'{filename}\')">Delete</button></li>'
+
+    return f'''
+    <h2>Uploaded Files</h2>
+    <ul>{file_list}</ul>
+    <button onclick="location.href='/upload.html'">Back to Upload</button>
+    <script src="/static/delete.js"></script>
+    '''
+
+@app.route('/delete/<path:filename>', methods=['DELETE'])
+def delete_file(filename):
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    get_response = requests.get(url, headers=headers)
+    sha = get_response.json().get("sha")
+
+    if not sha:
+        return jsonify({"status": "error", "message": "File not found"}), 404
+
+    data = {
+        "message": f"Delete {filename}",
+        "sha": sha,
+        "branch": GITHUB_BRANCH
     }
 
-    payload = {
-        "replyToken": reply_token,
-        "messages": [flex_message]
-    }
-
-    response = requests.post(
-        "https://api.line.me/v2/bot/message/reply",
-        headers=headers,
-        data=json.dumps(payload)
-    )
-    print(f"LINE API response: {response.status_code} - {response.text}")
+    delete_response = requests.delete(url, headers=headers, json=data)
+    if delete_response.status_code == 200:
+        return jsonify({"status": "success", "message": f"Deleted {filename}"})
+    else:
+        return jsonify({"status": "error", "message": delete_response.json().get("message")})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

@@ -1,11 +1,12 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 import os
 import json
 from datetime import datetime
 
 app = Flask(__name__)
 
-UPLOAD_FOLDER = "/tmp/uploads"  # Temporary folder for uploaded files
+# Set the temporary upload folder (Vercel's ephemeral storage)
+UPLOAD_FOLDER = "/tmp/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Logging function for chatbot conversations
@@ -73,7 +74,28 @@ def upload_file():
     try:
         file_path = os.path.join(UPLOAD_FOLDER, file.filename)
         file.save(file_path)
+
+        # Log the upload to a text file
+        log_path = os.path.join(UPLOAD_FOLDER, "upload_log.txt")
+        with open(log_path, "a") as log_file:
+            log_file.write(f"{file.filename}\n")
+
         return jsonify({"status": "success", "message": f"File uploaded to {file_path}"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# List uploaded files endpoint (using logs)
+@app.route('/list', methods=['GET'])
+def list_files():
+    try:
+        # Check for existing logs instead of files
+        log_path = os.path.join(UPLOAD_FOLDER, "upload_log.txt")
+        if os.path.exists(log_path):
+            with open(log_path, "r") as file:
+                log_data = file.readlines()
+            return jsonify({"status": "success", "files": log_data}), 200
+        else:
+            return jsonify({"status": "success", "files": [], "message": "No logs found"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -103,6 +125,3 @@ def home():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
-@app.route('/list', methods=['GET'])
-def list_files():
-    return jsonify({"status": "success", "message": "List endpoint is working!"}), 200

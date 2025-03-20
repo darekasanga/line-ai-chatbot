@@ -82,7 +82,6 @@ def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
 
             quality -= 5  # Reduce quality and try again
 
-        # Return the final attempt if it couldn't reach the desired size
         print(f"Final downsized size: {size} bytes")
         return output.getvalue()
 
@@ -132,33 +131,40 @@ def delete_from_github(filename):
         print(f"File {filename} not found for deletion.")
         return jsonify({"status": "error", "message": "File not found"}), 404
 
-# Upload endpoint
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file part"}), 400
+# List uploaded files
+@app.route('/list')
+def list_files():
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    response = requests.get(url, headers=headers)
 
-    file = request.files['file']
-    content = file.read()
+    if response.status_code != 200:
+        return f"Error fetching file list: {response.json().get('message', 'Unknown error')}", 500
 
-    # Upload the original file
-    original_response = upload_to_github(file.filename, content)
-
-    # Downsize the image and upload the downsized version
-    downsized_content = downsize_image(content)
-    downsized_filename = f"downsized_{file.filename}"
-    downsized_response = upload_to_github(downsized_filename, downsized_content)
-
-    print(f"Original upload response: {original_response.status_code}")
-    print(f"Downsized upload response: {downsized_response.status_code}")
-    print(f"Original size: {len(content)} bytes")
-    print(f"Downsized size: {len(downsized_content)} bytes")
+    files = response.json()
+    file_list = ''.join(f'''
+        <li>
+            <p>Original: <a href="{GITHUB_RAW_URL}{file['name']}">{file['name']}</a></p>
+            <p>Downsized: <a href="{GITHUB_RAW_URL}downsized_{file['name']}">downsized_{file['name']}</a></p>
+            <button onclick="deleteFile('{file['name']}')">Delete</button>
+        </li>
+    ''' for file in files)
 
     return f'''
-    <h3>Upload Complete!</h3>
-    <p>Original URL: <a href="{GITHUB_RAW_URL}{file.filename}">{file.filename}</a></p>
-    <p>Downsized URL: <a href="{GITHUB_RAW_URL}{downsized_filename}">{downsized_filename}</a></p>
+    <h2>Uploaded Files</h2>
+    <ul>{file_list}</ul>
     <button onclick="location.href='/upload.html'">Back to Upload</button>
+    '''
+
+# Upload page
+@app.route('/upload.html')
+def upload_page():
+    return '''
+    <h2>Upload a File</h2>
+    <form method="POST" enctype="multipart/form-data" action="/upload">
+        <input type="file" name="file" required>
+        <button type="submit">Upload</button>
+    </form>
     <button onclick="location.href='/list'">View Uploaded Files</button>
     '''
 

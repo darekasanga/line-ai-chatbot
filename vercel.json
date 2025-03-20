@@ -7,29 +7,11 @@
     }
   ],
   "routes": [
-    {
-      "src": "/webhook",
-      "dest": "app.py"
-    },
-    {
-      "src": "/upload",
-      "dest": "app.py"
-    },
-    {
-      "src": "/upload.html",
-      "dest": "app.py"
-    },
-    {
-      "src": "/list",
-      "dest": "app.py"
-    },
-    {
-      "src": "/files/(.*)",
-      "dest": "app.py"
-    },
-    {
-      "src": "/",
-      "dest": "app.py"
-    }
+    { "src": "/webhook", "dest": "app.py" },
+    { "src": "/upload", "dest": "app.py" },
+    { "src": "/upload.html", "dest": "app.py" },
+    { "src": "/list", "dest": "app.py" },
+    { "src": "/files/(.*)", "dest": "app.py" },
+    { "src": "/", "dest": "app.py" }
   ]
 }

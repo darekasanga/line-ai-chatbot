@@ -72,25 +72,44 @@ def downsize_image(image_data, max_size=(800, 800)):
 
 # Delete file from GitHub
 def delete_from_github(filename):
+    # Ensure the filename is properly encoded for URL
     encoded_filename = requests.utils.quote(filename)
     url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{encoded_filename}?ref={GITHUB_BRANCH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
+
+    # Get the SHA of the file to be deleted
     get_response = requests.get(url, headers=headers)
+    print(f"Getting SHA for file {filename} - Status: {get_response.status_code}")
+    print(f"GET Response: {get_response.text}")
+
     if get_response.status_code == 200:
         sha = get_response.json().get("sha")
         if not sha:
+            print(f"Error: SHA not found for file {filename}")
             return jsonify({"status": "error", "message": "SHA not found"}), 404
+
+        print(f"Deleting file {filename} with SHA {sha}")
         data = {
             "message": f"Delete {filename}",
             "sha": sha,
             "branch": GITHUB_BRANCH
         }
-        response = requests.delete(url, headers=headers, data=json.dumps(data))
-        return response
+
+        # Make the delete request
+        delete_response = requests.delete(url, headers=headers, data=json.dumps(data))
+        print(f"Delete Response: {delete_response.status_code}, {delete_response.text}")
+
+        if delete_response.status_code == 200:
+            print(f"Successfully deleted {filename}")
+            return jsonify({"status": "success", "message": f"Deleted {filename}"})
+        else:
+            print(f"Failed to delete {filename}: {delete_response.json()}")
+            return jsonify({"status": "error", "message": delete_response.json().get("message", "Failed to delete file")})
     else:
+        print(f"File {filename} not found for deletion.")
         return jsonify({"status": "error", "message": "File not found"}), 404
 
 # Delete file endpoint
@@ -101,7 +120,6 @@ def delete_file(filename):
         return jsonify({"status": "success", "message": f"Deleted {filename}"})
     else:
         return jsonify({"status": "error", "message": response.json().get("message", "Failed to delete file")})
-
 # Upload endpoint
 @app.route('/upload', methods=['POST'])
 def upload_file():

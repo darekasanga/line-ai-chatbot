@@ -102,3 +102,50 @@ def home():
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+# Create a new branch from the main branch
+def create_branch(branch_name):
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs/heads/main"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    # Get the latest commit SHA of the main branch
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+        sha = response.json()["object"]["sha"]
+        
+        # Create a new branch with the same SHA
+        new_branch_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs"
+        data = {
+            "ref": f"refs/heads/{branch_name}",
+            "sha": sha
+        }
+        branch_response = requests.post(new_branch_url, headers=headers, data=json.dumps(data))
+        if branch_response.status_code == 201:
+            print(f"Branch '{branch_name}' created successfully.")
+        else:
+            print(f"Branch '{branch_name}' already exists or failed to create.")
+    else:
+        print("Error fetching main branch SHA.")
+
+# Upload file to GitHub on a specified branch
+def upload_to_github(filename, content, branch_name):
+    # Ensure the branch exists
+    create_branch(branch_name)
+
+    # Upload the file
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={branch_name}"
+    encoded_content = base64.b64encode(content).decode("utf-8")
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    data = {
+        "message": f"Add {filename} to {branch_name}",
+        "content": encoded_content,
+        "branch": branch_name
+    }
+    response = requests.put(url, headers=headers, data=json.dumps(data))
+    print("GitHub API Response:", response.json())  # Debugging
+    return response

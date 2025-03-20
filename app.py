@@ -64,19 +64,29 @@ def delete_from_github(filename):
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
+    # Get the SHA of the file to be deleted
     get_response = requests.get(url, headers=headers)
     if get_response.status_code == 200:
         sha = get_response.json().get("sha")
+        if not sha:
+            print(f"SHA not found for {filename}")
+            return jsonify({"status": "error", "message": "SHA not found"}), 404
+        
         data = {
             "message": f"Delete {filename}",
             "sha": sha,
             "branch": GITHUB_BRANCH
         }
         response = requests.delete(url, headers=headers, data=json.dumps(data))
-        return response
+        if response.status_code == 200:
+            print(f"Successfully deleted {filename}")
+            return response
+        else:
+            print(f"Failed to delete {filename}: {response.json()}")
+            return response
     else:
+        print(f"File {filename} not found for deletion.")
         return jsonify({"status": "error", "message": "File not found"}), 404
-
 # Delete file endpoint
 @app.route('/delete/<filename>', methods=['DELETE'])
 def delete_file(filename):

@@ -116,7 +116,8 @@ def upload_file():
             print(f"Successfully uploaded original file: {original_url}")
         else:
             print(f"Failed to upload original file: {original_response.json()}")
-            return jsonify({"status": "error", "message": original_response.json()}), 500
+            # Return the error message from GitHub's response
+            return jsonify({"status": "error", "message": original_response.json().get("message", "Unknown error")}), 500
 
         # Downsized file upload to the "file" branch with a different filename
         downsized_content = downsize_image(content)
@@ -129,8 +130,10 @@ def upload_file():
             print(f"Successfully uploaded downsized file: {downsized_url}")
         else:
             print(f"Failed to upload downsized file: {downsized_response.json()}")
-            return jsonify({"status": "error", "message": downsized_response.json()}), 500
+            # Return the error message from GitHub's response
+            return jsonify({"status": "error", "message": downsized_response.json().get("message", "Unknown error")}), 500
 
+        # Return a successful response with both URLs
         return jsonify({
             "status": "success",
             "original_url": original_url,
@@ -139,7 +142,6 @@ def upload_file():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 # File upload page
 @app.route('/upload.html')
 def upload_page():

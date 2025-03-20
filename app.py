@@ -59,31 +59,39 @@ def upload_to_github(filename, content):
 
 # Delete file from GitHub
 def delete_from_github(filename):
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
+    # Encode the file name to handle special characters and slashes
+    encoded_filename = requests.utils.quote(filename)
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{encoded_filename}?ref={GITHUB_BRANCH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
+
     # Get the SHA of the file to be deleted
     get_response = requests.get(url, headers=headers)
+    print(f"Getting SHA for file {filename} - Status: {get_response.status_code}")
     if get_response.status_code == 200:
         sha = get_response.json().get("sha")
         if not sha:
-            print(f"SHA not found for {filename}")
+            print(f"Error: SHA not found for file {filename}")
             return jsonify({"status": "error", "message": "SHA not found"}), 404
-        
+
+        print(f"Deleting file {filename} with SHA {sha}")
         data = {
             "message": f"Delete {filename}",
             "sha": sha,
             "branch": GITHUB_BRANCH
         }
-        response = requests.delete(url, headers=headers, data=json.dumps(data))
-        if response.status_code == 200:
+
+        delete_response = requests.delete(url, headers=headers, data=json.dumps(data))
+        print(f"Delete Response: {delete_response.status_code}, {delete_response.json()}")
+
+        if delete_response.status_code == 200:
             print(f"Successfully deleted {filename}")
-            return response
+            return jsonify({"status": "success", "message": f"Deleted {filename}"})
         else:
-            print(f"Failed to delete {filename}: {response.json()}")
-            return response
+            print(f"Failed to delete {filename}: {delete_response.json()}")
+            return jsonify({"status": "error", "message": delete_response.json().get("message", "Failed to delete file")})
     else:
         print(f"File {filename} not found for deletion.")
         return jsonify({"status": "error", "message": "File not found"}), 404

@@ -16,11 +16,11 @@ jobs:
           git config --global user.name "darekasanga"
           git config --global user.email "164146822+darekasanga@users.noreply.github.com"
 
-      - name: Authenticate with GitHub Token
+      - name: Authenticate with PAT Token
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/darekasanga/line-ai-chatbot.git
+          git remote set-url origin https://x-access-token:${PAT_TOKEN}@github.com/darekasanga/line-ai-chatbot.git
 
       - name: Run Bash Commands
         run: |

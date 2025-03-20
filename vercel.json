@@ -13,5 +13,6 @@
     { "src": "/list", "dest": "app.py" },
     { "src": "/files/(.*)", "dest": "app.py" },
     { "src": "/", "dest": "app.py" }
+    { "src": "/test", "dest": "app.py" }
   ]
 }

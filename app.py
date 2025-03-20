@@ -72,11 +72,8 @@ def downsize_image(image_data, max_size=(800, 800)):
 
 # Delete file from GitHub
 def delete_from_github(filename):
-    # Print the received filename for debugging
-    print(f"Attempting to delete file: {filename}")
-
-    # Encode the file name for the URL
-    encoded_filename = requests.utils.quote(filename)
+    # Properly encode the filename for the URL
+    encoded_filename = requests.utils.quote(filename, safe='')
     url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{encoded_filename}?ref={GITHUB_BRANCH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -101,6 +98,7 @@ def delete_from_github(filename):
             "branch": GITHUB_BRANCH
         }
 
+        # Make the delete request
         delete_response = requests.delete(url, headers=headers, data=json.dumps(data))
         print(f"Delete Response Status: {delete_response.status_code}")
         print(f"Delete Response Text: {delete_response.text}")

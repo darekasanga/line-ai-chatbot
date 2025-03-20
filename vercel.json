@@ -11,6 +11,7 @@
     { "src": "/upload", "dest": "app.py" },
     { "src": "/upload.html", "dest": "app.py" },
     { "src": "/list", "dest": "app.py" },
+    { "src": "/delete/(.*)", "dest": "app.py" },
     { "src": "/", "dest": "app.py" }
   ]
 }

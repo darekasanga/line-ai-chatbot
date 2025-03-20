@@ -57,15 +57,35 @@ def upload_to_github(filename, content):
     response = requests.put(url, headers=headers, data=json.dumps(data))
     return response
 
-# Resize the image with optimized settings
-def downsize_image(image_data, max_size=(800, 800)):
+# Resize the image with adaptive settings to limit size to 300 KB
+def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
     try:
         image = Image.open(BytesIO(image_data))
-        image = image.convert("RGB")
-        image.thumbnail(max_size, Image.ANTIALIAS)
+        image = image.convert("RGB")  # Convert to RGB for JPEG compatibility
+        image.thumbnail(max_size, Image.ANTIALIAS)  # Efficient scaling
+
+        # Adaptive quality reduction to reach the target size
+        quality = 95
         output = BytesIO()
-        image.save(output, format="JPEG", quality=85)
+
+        while quality > 5:
+            output.seek(0)
+            output.truncate()
+            image.save(output, format="JPEG", quality=quality)
+            size = output.tell()
+
+            print(f"Trying quality {quality}: {size} bytes")
+
+            if size <= target_size:
+                print(f"Successfully downsized image to {size} bytes")
+                return output.getvalue()
+
+            quality -= 5  # Reduce quality and try again
+
+        # Return the final attempt if it couldn't reach the desired size
+        print(f"Final downsized size: {size} bytes")
         return output.getvalue()
+
     except Exception as e:
         print(f"Error during image downsizing: {str(e)}")
         return image_data
@@ -74,7 +94,6 @@ def downsize_image(image_data, max_size=(800, 800)):
 def delete_from_github(filename):
     print(f"Attempting to delete file: {filename}")
 
-    # Properly encode the filename for the URL
     encoded_filename = requests.utils.quote(filename, safe='')
     url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{encoded_filename}?ref={GITHUB_BRANCH}"
     headers = {
@@ -82,7 +101,6 @@ def delete_from_github(filename):
         "Accept": "application/vnd.github.v3+json"
     }
 
-    # Get the SHA of the file to be deleted
     get_response = requests.get(url, headers=headers)
     print(f"GET Response Status: {get_response.status_code}")
     print(f"GET Response Text: {get_response.text}")
@@ -114,13 +132,6 @@ def delete_from_github(filename):
         print(f"File {filename} not found for deletion.")
         return jsonify({"status": "error", "message": "File not found"}), 404
 
-# Delete file endpoint
-@app.route('/delete/<path:filename>', methods=['DELETE'])
-def delete_file(filename):
-    print(f"Received delete request for: {filename}")
-    response = delete_from_github(filename)
-    return response
-
 # Upload endpoint
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -130,10 +141,18 @@ def upload_file():
     file = request.files['file']
     content = file.read()
 
+    # Upload the original file
     original_response = upload_to_github(file.filename, content)
+
+    # Downsize the image and upload the downsized version
     downsized_content = downsize_image(content)
     downsized_filename = f"downsized_{file.filename}"
     downsized_response = upload_to_github(downsized_filename, downsized_content)
+
+    print(f"Original upload response: {original_response.status_code}")
+    print(f"Downsized upload response: {downsized_response.status_code}")
+    print(f"Original size: {len(content)} bytes")
+    print(f"Downsized size: {len(downsized_content)} bytes")
 
     return f'''
     <h3>Upload Complete!</h3>
@@ -143,38 +162,10 @@ def upload_file():
     <button onclick="location.href='/list'">View Uploaded Files</button>
     '''
 
-# Upload page
-@app.route('/upload.html')
-def upload_page():
-    return '''
-    <h2>Upload a File</h2>
-    <form method="POST" enctype="multipart/form-data" action="/upload">
-        <input type="file" name="file" required>
-        <button type="submit">Upload</button>
-    </form>
-    <button onclick="location.href='/list'">View Uploaded Files</button>
-    '''
+# Home page
+@app.route('/')
+def home():
+    return "Hello, GitHub File Uploader!"
 
-# List uploaded files
-@app.route('/list')
-def list_files():
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    response = requests.get(url, headers=headers)
-
-    if response.status_code != 200:
-        return f"Error fetching file list: {response.json().get('message', 'Unknown error')}", 500
-
-    files = response.json()
-    file_list = ''.join(f'''
-        <li>
-            <p>Original: <a href="{GITHUB_RAW_URL}{file['name']}">{file['name']}</a></p>
-            <p>Downsized: <a href="{GITHUB_RAW_URL}downsized_{file['name']}">downsized_{file['name']}</a></p>
-            <button onclick="deleteFile('{file['name']}')">Delete</button>
-        </li>
-    ''' for file in files)
-
-    return f'''
-    <h2>Uploaded Files</h2>
-    <ul>{file_list}</ul>
-    '''
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)

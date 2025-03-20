@@ -109,11 +109,35 @@ def list_files():
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     response = requests.get(url, headers=headers)
     files = response.json()
-    file_list = ''.join([f'''
-    <li>
-        <a href="{file['download_url']}">{file['name']}</a>
-        <button onclick="deleteFile('{file['name']}')">Delete</button>
-    </li>''' for file in files])
+
+    file_list = ''
+    for file in files:
+        filename = file['name']
+        original_url = f"{GITHUB_RAW_URL}{filename}"
+        
+        # Check if the file is downsized
+        if filename.startswith("downsized_"):
+            downsized_url = original_url
+            original_filename = filename.replace("downsized_", "")
+            original_url = f"{GITHUB_RAW_URL}{original_filename}"
+            file_list += f'''
+            <li>
+                <p>Original: <a href="{original_url}">{original_filename}</a></p>
+                <p>Downsized: <a href="{downsized_url}">{filename}</a></p>
+                <button onclick="deleteFile('{filename}')">Delete</button>
+            </li>
+            '''
+        else:
+            # If it's an original file without a downsized counterpart
+            downsized_filename = f"downsized_{filename}"
+            downsized_url = f"{GITHUB_RAW_URL}{downsized_filename}"
+            file_list += f'''
+            <li>
+                <p>Original: <a href="{original_url}">{filename}</a></p>
+                <p>Downsized: <a href="{downsized_url}">{downsized_filename}</a></p>
+                <button onclick="deleteFile('{filename}')">Delete</button>
+            </li>
+            '''
     return f'''
     <h2>Uploaded Files</h2>
     <ul>{file_list}</ul>
@@ -125,25 +149,6 @@ def list_files():
     }}
     </script>
     '''
-
-# Delete file endpoint
-@app.route('/delete/<filename>', methods=['DELETE'])
-def delete_file(filename):
-    response = delete_from_github(filename)
-    return jsonify({"status": "success" if response.status_code == 200 else "error"})
-
-# Upload page
-@app.route('/upload.html')
-def upload_page():
-    return '''
-    <h2>Upload a File</h2>
-    <form method="POST" enctype="multipart/form-data" action="/upload">
-        <input type="file" name="file" required>
-        <button type="submit">Upload</button>
-    </form>
-    <button onclick="location.href='/list'">View Uploaded Files</button>
-    '''
-
 # Home page
 @app.route('/')
 def home():

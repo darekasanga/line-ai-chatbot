@@ -162,78 +162,78 @@ def upload_file():
     <button onclick="location.href='/list'">View Uploaded Files</button>
     '''
 
-@app.route('/upload.html')
-def upload_page():
+@app.route('/upload_page_json')
+def upload_page_json():
     upload_page_json = {
-        "type": "flex",
         "altText": "Upload File",
         "contents": {
-            "type": "bubble",
             "body": {
-                "type": "box",
-                "layout": "vertical",
                 "contents": [
                     {
-                        "type": "text",
-                        "text": "Upload a File",
-                        "weight": "bold",
+                        "margin": "md",
                         "size": "xl",
-                        "margin": "md"
+                        "text": "Upload a File",
+                        "type": "text",
+                        "weight": "bold"
                     },
                     {
-                        "type": "box",
-                        "layout": "vertical",
                         "contents": [
                             {
-                                "type": "text",
-                                "text": "Select a file to upload:",
+                                "margin": "md",
                                 "size": "sm",
-                                "margin": "md"
+                                "text": "Select a file to upload:",
+                                "type": "text"
                             },
                             {
-                                "type": "input",
-                                "name": "file",
-                                "label": "Choose File",
                                 "accept": "image/*",
                                 "action": {
-                                    "type": "uri",
                                     "label": "Browse",
-                                    "uri": "/upload"
-                                }
-                            }
-                        ]
-                    },
-                    {
-                        "type": "box",
-                        "layout": "horizontal",
-                        "contents": [
-                            {
-                                "type": "button",
-                                "action": {
-                                    "type": "message",
-                                    "label": "Upload",
-                                    "text": "Upload"
-                                },
-                                "style": "primary",
-                                "color": "#1DB446",
-                                "margin": "sm"
-                            },
-                            {
-                                "type": "button",
-                                "action": {
                                     "type": "uri",
-                                    "label": "View Uploaded Files",
-                                    "uri": "/list"
+                                    "uri": "/upload"
                                 },
-                                "style": "secondary",
-                                "margin": "sm"
+                                "label": "Choose File",
+                                "name": "file",
+                                "type": "input"
                             }
                         ],
-                        "margin": "md"
+                        "layout": "vertical",
+                        "type": "box"
+                    },
+                    {
+                        "contents": [
+                            {
+                                "action": {
+                                    "label": "Upload",
+                                    "text": "Upload",
+                                    "type": "message"
+                                },
+                                "color": "#1DB446",
+                                "margin": "sm",
+                                "style": "primary",
+                                "type": "button"
+                            },
+                            {
+                                "action": {
+                                    "label": "View Uploaded Files",
+                                    "type": "uri",
+                                    "uri": "/list"
+                                },
+                                "margin": "sm",
+                                "style": "secondary",
+                                "type": "button"
+                            }
+                        ],
+                        "layout": "horizontal",
+                        "margin": "md",
+                        "type": "box"
                     }
-                ]
-            }
-        }
+                ],
+                "layout": "vertical",
+                "type": "box"
+            },
+            "type": "bubble"
+        },
+        "type": "flex"
     }
     return jsonify(upload_page_json)
 

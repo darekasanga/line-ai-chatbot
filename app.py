@@ -57,48 +57,44 @@ def upload_to_github(filename, content):
     response = requests.put(url, headers=headers, data=json.dumps(data))
     return response
 
+# Resize the image with optimized settings
+def downsize_image(image_data, max_size=(800, 800)):
+    try:
+        image = Image.open(BytesIO(image_data))
+        image = image.convert("RGB")  # Convert to a more efficient format
+        image.thumbnail(max_size, Image.ANTIALIAS)  # Use efficient scaling
+        output = BytesIO()
+        image.save(output, format="JPEG", quality=85)  # Save as JPEG with reduced quality
+        return output.getvalue()
+    except Exception as e:
+        print(f"Error during image downsizing: {str(e)}")
+        return image_data  # Return the original data if downsizing fails
+
 # Delete file from GitHub
 def delete_from_github(filename):
-    # Ensure the filename is properly encoded
     encoded_filename = requests.utils.quote(filename)
     url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{encoded_filename}?ref={GITHUB_BRANCH}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-
-    # Get the SHA of the file to be deleted
     get_response = requests.get(url, headers=headers)
-    print(f"Getting SHA for file {filename} - Status: {get_response.status_code}")
-    print(f"GET Response: {get_response.text}")
-
     if get_response.status_code == 200:
         sha = get_response.json().get("sha")
         if not sha:
-            print(f"Error: SHA not found for file {filename}")
             return jsonify({"status": "error", "message": "SHA not found"}), 404
-
-        print(f"Deleting file {filename} with SHA {sha}")
         data = {
             "message": f"Delete {filename}",
             "sha": sha,
             "branch": GITHUB_BRANCH
         }
-
-        delete_response = requests.delete(url, headers=headers, data=json.dumps(data))
-        print(f"Delete Response: {delete_response.status_code}, {delete_response.text}")
-
-        if delete_response.status_code == 200:
-            print(f"Successfully deleted {filename}")
-            return jsonify({"status": "success", "message": f"Deleted {filename}"})
-        else:
-            print(f"Failed to delete {filename}: {delete_response.json()}")
-            return jsonify({"status": "error", "message": delete_response.json().get("message", "Failed to delete file")})
+        response = requests.delete(url, headers=headers, data=json.dumps(data))
+        return response
     else:
-        print(f"File {filename} not found for deletion.")
         return jsonify({"status": "error", "message": "File not found"}), 404
+
 # Delete file endpoint
-@app.route('/delete/<filename>', methods=['DELETE'])
+@app.route('/delete/<path:filename>', methods=['DELETE'])
 def delete_file(filename):
     response = delete_from_github(filename)
     if response.status_code == 200:
@@ -106,19 +102,12 @@ def delete_file(filename):
     else:
         return jsonify({"status": "error", "message": response.json().get("message", "Failed to delete file")})
 
-# Resize the image
-def downsize_image(image_data, max_size=(800, 800)):
-    image = Image.open(BytesIO(image_data))
-    image.thumbnail(max_size)
-    output = BytesIO()
-    image.save(output, format=image.format)
-    return output.getvalue()
-
 # Upload endpoint
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return "No file part", 400
+        return jsonify({"status": "error", "message": "No file part"}), 400
+
     file = request.files['file']
     content = file.read()
 
@@ -133,50 +122,6 @@ def upload_file():
     <p>Downsized URL: <a href="{GITHUB_RAW_URL}{downsized_filename}">{downsized_filename}</a></p>
     <button onclick="location.href='/upload.html'">Back to Upload</button>
     <button onclick="location.href='/list'">View Uploaded Files</button>
-    '''
-
-# List uploaded files
-@app.route('/list')
-def list_files():
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    response = requests.get(url, headers=headers)
-    files = response.json()
-
-    file_list = ''
-    for file in files:
-        filename = file['name']
-        original_url = f"{GITHUB_RAW_URL}{filename}"
-        downsized_filename = f"downsized_{filename}"
-        downsized_url = f"{GITHUB_RAW_URL}{downsized_filename}"
-        file_list += f'''
-        <li>
-            <p>Original: <a href="{original_url}">{filename}</a></p>
-            <p>Downsized: <a href="{downsized_url}">{downsized_filename}</a></p>
-            <button onclick="deleteFile('{filename}')">Delete</button>
-        </li>
-        '''
-    return f'''
-    <h2>Uploaded Files</h2>
-    <ul>{file_list}</ul>
-    <button onclick="location.href='/upload.html'">Back to Upload</button>
-    <script>
-    function deleteFile(filename) {{
-        fetch('/delete/' + filename, {{ method: 'DELETE' }})
-            .then(response => response.json())
-            .then(data => {{
-                if (data.status === "success") {{
-                    alert("File deleted successfully!");
-                    location.reload();
-                }} else {{
-                    alert("Failed to delete file: " + data.message);
-                }}
-            }})
-            .catch(error => {{
-                alert("Error during file deletion: " + error.message);
-            }});
-    }}
-    </script>
     '''
 
 # Upload page

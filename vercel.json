@@ -16,6 +16,10 @@
       "dest": "app.py"
     },
     {
+      "src": "/list",
+      "dest": "app.py"
+    },
+    {
       "src": "/upload.html",
       "dest": "app.py"
     },

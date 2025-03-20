@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, redirect, url_for
 import os
 import json
 import base64
@@ -12,7 +12,7 @@ app = Flask(__name__)
 # GitHub repository details
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = "darekasanga/line-ai-chatbot"
-GITHUB_BRANCH = "file"  # Use the branch name "file"
+GITHUB_BRANCH = "file"
 GITHUB_API = "https://api.github.com"
 GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/"
 
@@ -23,148 +23,131 @@ def create_branch(branch_name):
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-
-    # Get the latest commit SHA of the main branch
     response = requests.get(url, headers=headers)
     if response.status_code == 200:
         sha = response.json()["object"]["sha"]
-        
-        # Check if the branch already exists
         branch_check_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs/heads/{branch_name}"
         check_response = requests.get(branch_check_url, headers=headers)
         if check_response.status_code == 200:
-            print(f"Branch '{branch_name}' already exists.")
             return
-        
-        # Create a new branch with the same SHA
         new_branch_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs"
-        data = {
-            "ref": f"refs/heads/{branch_name}",
-            "sha": sha
-        }
-        branch_response = requests.post(new_branch_url, headers=headers, data=json.dumps(data))
-        if branch_response.status_code == 201:
-            print(f"Branch '{branch_name}' created successfully.")
-        else:
-            print(f"Failed to create branch '{branch_name}'. Error: {branch_response.json()}")
-    else:
-        print("Error fetching main branch SHA.")
+        data = {"ref": f"refs/heads/{branch_name}", "sha": sha}
+        requests.post(new_branch_url, headers=headers, data=json.dumps(data))
 
 # Upload file to GitHub on the "file" branch
-def upload_to_github(filename, content, branch_name="file"):
-    # Ensure the branch exists
-    create_branch(branch_name)
-
-    # Construct the GitHub API URL
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={branch_name}"
+def upload_to_github(filename, content):
+    create_branch(GITHUB_BRANCH)
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
     encoded_content = base64.b64encode(content).decode("utf-8")
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-
-    # Check if the file already exists to get the SHA
     get_response = requests.get(url, headers=headers)
     sha = None
     if get_response.status_code == 200:
         sha = get_response.json().get("sha")
-        print(f"File '{filename}' already exists. SHA: {sha}")
-
-    # Prepare the data payload
     data = {
-        "message": f"Add or update {filename} to {branch_name}",
+        "message": f"Add or update {filename} to {GITHUB_BRANCH}",
         "content": encoded_content,
-        "branch": branch_name
+        "branch": GITHUB_BRANCH
     }
-
-    # If the file exists, add the SHA to the data
     if sha:
         data["sha"] = sha
-
-    # Upload or update the file
     response = requests.put(url, headers=headers, data=json.dumps(data))
-    print("GitHub API Response:", response.json())  # Debugging
     return response
+
+# Delete file from GitHub
+def delete_from_github(filename):
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    get_response = requests.get(url, headers=headers)
+    if get_response.status_code == 200:
+        sha = get_response.json().get("sha")
+        data = {
+            "message": f"Delete {filename}",
+            "sha": sha,
+            "branch": GITHUB_BRANCH
+        }
+        response = requests.delete(url, headers=headers, data=json.dumps(data))
+        return response
 
 # Resize the image
 def downsize_image(image_data, max_size=(800, 800)):
     image = Image.open(BytesIO(image_data))
-    image.thumbnail(max_size)  # Maintain aspect ratio
+    image.thumbnail(max_size)
     output = BytesIO()
-    image.save(output, format=image.format)  # Save in the same format
+    image.save(output, format=image.format)
     return output.getvalue()
 
-# File upload endpoint
+# Upload endpoint
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file part"}), 400
-
+        return "No file part", 400
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({"status": "error", "message": "No selected file"}), 400
+    content = file.read()
+    original_response = upload_to_github(file.filename, content)
+    downsized_content = downsize_image(content)
+    downsized_filename = f"downsized_{file.filename}"
+    downsized_response = upload_to_github(downsized_filename, downsized_content)
+    return f'''
+    <h3>Upload Complete!</h3>
+    <p>Original File URL: <a href="{GITHUB_RAW_URL}{file.filename}">{file.filename}</a></p>
+    <p>Downsized File URL: <a href="{GITHUB_RAW_URL}{downsized_filename}">{downsized_filename}</a></p>
+    <button onclick="location.href='/upload.html'">Back to Upload</button>
+    <button onclick="location.href='/list'">View Uploaded Files</button>
+    '''
 
-    try:
-        content = file.read()
+# List uploaded files
+@app.route('/list')
+def list_files():
+    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    response = requests.get(url, headers=headers)
+    files = response.json()
+    file_list = ''.join([f'''
+    <li>
+        <a href="{file['download_url']}">{file['name']}</a>
+        <button onclick="deleteFile('{file['name']}')">Delete</button>
+    </li>''' for file in files])
+    return f'''
+    <h2>Uploaded Files</h2>
+    <ul>{file_list}</ul>
+    <button onclick="location.href='/upload.html'">Back to Upload</button>
+    <script>
+    function deleteFile(filename) {{
+        fetch('/delete/' + filename, {{ method: 'DELETE' }})
+            .then(response => location.reload());
+    }}
+    </script>
+    '''
 
-        # Original file upload to the "file" branch
-        original_response = upload_to_github(file.filename, content, GITHUB_BRANCH)
-        original_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{file.filename}"
+# Delete file endpoint
+@app.route('/delete/<filename>', methods=['DELETE'])
+def delete_file(filename):
+    response = delete_from_github(filename)
+    return jsonify({"status": "success" if response.status_code == 200 else "error"})
 
-        # Handle response and check if the upload succeeded
-        if original_response.status_code == 201:
-            print(f"Successfully uploaded original file: {original_url}")
-        else:
-            print(f"Failed to upload original file: {original_response.json()}")
-            # Return the error message from GitHub's response
-            return jsonify({"status": "error", "message": original_response.json().get("message", "Unknown error")}), 500
-
-        # Downsized file upload to the "file" branch with a different filename
-        downsized_content = downsize_image(content)
-        downsized_filename = f"downsized_{file.filename}"
-        downsized_response = upload_to_github(downsized_filename, downsized_content, GITHUB_BRANCH)
-        downsized_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{downsized_filename}"
-
-        # Handle response for downsized file
-        if downsized_response.status_code == 201:
-            print(f"Successfully uploaded downsized file: {downsized_url}")
-        else:
-            print(f"Failed to upload downsized file: {downsized_response.json()}")
-            # Return the error message from GitHub's response
-            return jsonify({"status": "error", "message": downsized_response.json().get("message", "Unknown error")}), 500
-
-        # Return a successful response with both URLs
-        return jsonify({
-            "status": "success",
-            "original_url": original_url,
-            "downsized_url": downsized_url
-        }), 200
-
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-# File upload page
+# Upload page
 @app.route('/upload.html')
 def upload_page():
     return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>File Uploader</title>
-    </head>
-    <body>
-        <h2>Upload a File to GitHub Pages</h2>
-        <form id="uploadForm" enctype="multipart/form-data" method="POST" action="/upload">
-            <input type="file" name="file" required>
-            <button type="submit">Upload</button>
-        </form>
-    </body>
-    </html>
+    <h2>Upload a File</h2>
+    <form method="POST" enctype="multipart/form-data" action="/upload">
+        <input type="file" name="file" required>
+        <button type="submit">Upload</button>
+    </form>
+    <button onclick="location.href='/list'">View Uploaded Files</button>
     '''
 
 # Home page
 @app.route('/')
 def home():
-    return "Hello, GitHub Pages File Uploader and Chatbot with Branch 'file'!", 200
+    return "Hello, GitHub File Uploader!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

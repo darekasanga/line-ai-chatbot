@@ -18,59 +18,65 @@ GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANC
 
 # Create the branch if it doesn't exist
 def create_branch(branch_name):
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs/heads/main"
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    response = requests.get(url, headers=headers)
-    print(f"Main branch response: {response.status_code} - {response.text}")
+    try:
+        url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs/heads/main"
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        response = requests.get(url, headers=headers)
+        print(f"Main branch response: {response.status_code} - {response.text}")
 
-    if response.status_code == 200:
-        sha = response.json()["object"]["sha"]
-        branch_check_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs/heads/{branch_name}"
-        check_response = requests.get(branch_check_url, headers=headers)
-        print(f"Check branch response: {check_response.status_code} - {check_response.text}")
+        if response.status_code == 200:
+            sha = response.json()["object"]["sha"]
+            branch_check_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs/heads/{branch_name}"
+            check_response = requests.get(branch_check_url, headers=headers)
+            print(f"Check branch response: {check_response.status_code} - {check_response.text}")
 
-        # Create the branch if it doesn't exist
-        if check_response.status_code != 200:
-            new_branch_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs"
-            data = {"ref": f"refs/heads/{branch_name}", "sha": sha}
-            create_response = requests.post(new_branch_url, headers=headers, data=json.dumps(data))
-            print(f"Branch creation response: {create_response.status_code} - {create_response.text}")
+            if check_response.status_code != 200:
+                new_branch_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs"
+                data = {"ref": f"refs/heads/{branch_name}", "sha": sha}
+                create_response = requests.post(new_branch_url, headers=headers, data=json.dumps(data))
+                print(f"Branch creation response: {create_response.status_code} - {create_response.text}")
+    except Exception as e:
+        print(f"Error during branch creation: {str(e)}")
 
 # Upload file to GitHub on the "file" branch
 def upload_to_github(filename, content):
-    create_branch(GITHUB_BRANCH)
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
-    print(f"Uploading to URL: {url}")
-    encoded_content = base64.b64encode(content).decode("utf-8")
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
+    try:
+        create_branch(GITHUB_BRANCH)
+        url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
+        print(f"Uploading to URL: {url}")
+        encoded_content = base64.b64encode(content).decode("utf-8")
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
+        }
 
-    get_response = requests.get(url, headers=headers)
-    print(f"GET Response Status: {get_response.status_code}")
-    print(f"GET Response Text: {get_response.text}")
+        get_response = requests.get(url, headers=headers)
+        print(f"GET Response Status: {get_response.status_code}")
+        print(f"GET Response Text: {get_response.text}")
 
-    sha = None
-    if get_response.status_code == 200:
-        sha = get_response.json().get("sha")
-        print(f"Existing file SHA: {sha}")
+        sha = None
+        if get_response.status_code == 200:
+            sha = get_response.json().get("sha")
+            print(f"Existing file SHA: {sha}")
 
-    data = {
-        "message": f"Add or update {filename} to {GITHUB_BRANCH}",
-        "content": encoded_content,
-        "branch": GITHUB_BRANCH
-    }
-    if sha:
-        data["sha"] = sha
+        data = {
+            "message": f"Add or update {filename} to {GITHUB_BRANCH}",
+            "content": encoded_content,
+            "branch": GITHUB_BRANCH
+        }
+        if sha:
+            data["sha"] = sha
 
-    response = requests.put(url, headers=headers, data=json.dumps(data))
-    print(f"Upload Response Status: {response.status_code}")
-    print(f"Upload Response Text: {response.text}")
-    return response
+        response = requests.put(url, headers=headers, data=json.dumps(data))
+        print(f"Upload Response Status: {response.status_code}")
+        print(f"Upload Response Text: {response.text}")
+        return response
+    except Exception as e:
+        print(f"Error during upload: {str(e)}")
+        return None
 
 # Resize the image with adaptive settings to limit size to 300 KB
 def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
@@ -87,7 +93,6 @@ def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
             output.truncate()
             image.save(output, format="JPEG", quality=quality)
             size = output.tell()
-
             print(f"Trying quality {quality}: {size} bytes")
 
             if size <= target_size:
@@ -98,48 +103,42 @@ def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
 
         print(f"Final downsized size: {size} bytes")
         return output.getvalue()
-
     except Exception as e:
         print(f"Error during image downsizing: {str(e)}")
         return image_data
 
-# Delete file from GitHub
-def delete_from_github(filename):
-    print(f"Attempting to delete file: {filename}")
+# List uploaded files
+@app.route('/list')
+def list_files():
+    try:
+        url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        response = requests.get(url, headers=headers)
 
-    encoded_filename = requests.utils.quote(filename, safe='')
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{encoded_filename}?ref={GITHUB_BRANCH}"
-    headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
+        print(f"List Page URL: {url}")
+        print(f"List Page Response Status: {response.status_code}")
+        print(f"List Page Response Text: {response.text}")
 
-    get_response = requests.get(url, headers=headers)
-    print(f"GET Response Status: {get_response.status_code}")
-    print(f"GET Response Text: {get_response.text}")
+        if response.status_code != 200:
+            return f"Error fetching file list: {response.json().get('message', 'Unknown error')}", 500
 
-    if get_response.status_code == 200:
-        sha = get_response.json().get("sha")
-        if not sha:
-            print(f"Error: SHA not found for file {filename}")
-            return jsonify({"status": "error", "message": "SHA not found"}), 404
+        files = response.json()
+        file_list = ''.join(f'''
+            <li>
+                <p>Original: <a href="{GITHUB_RAW_URL}{file['name']}">{file['name']}</a></p>
+                <p>Downsized: <a href="{GITHUB_RAW_URL}downsized_{file['name']}">downsized_{file['name']}</a></p>
+                <button onclick="deleteFile('{file['name']}')">Delete</button>
+            </li>
+        ''' for file in files)
 
-        data = {
-            "message": f"Delete {filename}",
-            "sha": sha,
-            "branch": GITHUB_BRANCH
-        }
-
-        delete_response = requests.delete(url, headers=headers, data=json.dumps(data))
-        print(f"Delete Response Status: {delete_response.status_code}")
-        print(f"Delete Response Text: {delete_response.text}")
-
-        if delete_response.status_code == 200:
-            return jsonify({"status": "success", "message": f"Deleted {filename}"})
-        else:
-            return jsonify({"status": "error", "message": delete_response.json().get("message", "Failed to delete file")})
-    else:
-        return jsonify({"status": "error", "message": "File not found"}), 404
+        return f'''
+        <h2>Uploaded Files</h2>
+        <ul>{file_list}</ul>
+        <button onclick="location.href='/upload.html'">Back to Upload</button>
+        '''
+    except Exception as e:
+        print(f"Error during list page generation: {str(e)}")
+        return f"Internal Server Error: {str(e)}", 500
 
 # Upload endpoint
 @app.route('/upload', methods=['POST'])

@@ -24,15 +24,20 @@ def create_branch(branch_name):
         "Accept": "application/vnd.github.v3+json"
     }
     response = requests.get(url, headers=headers)
+    print(f"Main branch response: {response.status_code} - {response.text}")
+
     if response.status_code == 200:
         sha = response.json()["object"]["sha"]
         branch_check_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs/heads/{branch_name}"
         check_response = requests.get(branch_check_url, headers=headers)
-        if check_response.status_code == 200:
-            return
-        new_branch_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs"
-        data = {"ref": f"refs/heads/{branch_name}", "sha": sha}
-        requests.post(new_branch_url, headers=headers, data=json.dumps(data))
+        print(f"Check branch response: {check_response.status_code} - {check_response.text}")
+
+        # Create the branch if it doesn't exist
+        if check_response.status_code != 200:
+            new_branch_url = f"{GITHUB_API}/repos/{GITHUB_REPO}/git/refs"
+            data = {"ref": f"refs/heads/{branch_name}", "sha": sha}
+            create_response = requests.post(new_branch_url, headers=headers, data=json.dumps(data))
+            print(f"Branch creation response: {create_response.status_code} - {create_response.text}")
 
 # Upload file to GitHub on the "file" branch
 def upload_to_github(filename, content):
@@ -71,10 +76,9 @@ def upload_to_github(filename, content):
 def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
     try:
         image = Image.open(BytesIO(image_data))
-        image = image.convert("RGB")  # Convert to RGB for JPEG compatibility
-        image.thumbnail(max_size, Image.ANTIALIAS)  # Efficient scaling
+        image = image.convert("RGB")
+        image.thumbnail(max_size, Image.ANTIALIAS)
 
-        # Adaptive quality reduction to reach the target size
         quality = 95
         output = BytesIO()
 
@@ -90,7 +94,7 @@ def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
                 print(f"Successfully downsized image to {size} bytes")
                 return output.getvalue()
 
-            quality -= 5  # Reduce quality and try again
+            quality -= 5
 
         print(f"Final downsized size: {size} bytes")
         return output.getvalue()
@@ -120,7 +124,6 @@ def delete_from_github(filename):
             print(f"Error: SHA not found for file {filename}")
             return jsonify({"status": "error", "message": "SHA not found"}), 404
 
-        print(f"Deleting file {filename} with SHA {sha}")
         data = {
             "message": f"Delete {filename}",
             "sha": sha,
@@ -132,38 +135,32 @@ def delete_from_github(filename):
         print(f"Delete Response Text: {delete_response.text}")
 
         if delete_response.status_code == 200:
-            print(f"Successfully deleted {filename}")
             return jsonify({"status": "success", "message": f"Deleted {filename}"})
         else:
-            print(f"Failed to delete {filename}: {delete_response.text}")
             return jsonify({"status": "error", "message": delete_response.json().get("message", "Failed to delete file")})
     else:
-        print(f"File {filename} not found for deletion.")
         return jsonify({"status": "error", "message": "File not found"}), 404
 
-# List uploaded files
-@app.route('/list')
-def list_files():
-    url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
-    response = requests.get(url, headers=headers)
+# Upload endpoint
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"}), 400
 
-    if response.status_code != 200:
-        return f"Error fetching file list: {response.json().get('message', 'Unknown error')}", 500
+    file = request.files['file']
+    content = file.read()
 
-    files = response.json()
-    file_list = ''.join(f'''
-        <li>
-            <p>Original: <a href="{GITHUB_RAW_URL}{file['name']}">{file['name']}</a></p>
-            <p>Downsized: <a href="{GITHUB_RAW_URL}downsized_{file['name']}">downsized_{file['name']}</a></p>
-            <button onclick="deleteFile('{file['name']}')">Delete</button>
-        </li>
-    ''' for file in files)
+    original_response = upload_to_github(file.filename, content)
+    downsized_content = downsize_image(content)
+    downsized_filename = f"downsized_{file.filename}"
+    downsized_response = upload_to_github(downsized_filename, downsized_content)
 
     return f'''
-    <h2>Uploaded Files</h2>
-    <ul>{file_list}</ul>
+    <h3>Upload Complete!</h3>
+    <p>Original URL: <a href="{GITHUB_RAW_URL}{file.filename}">{file.filename}</a></p>
+    <p>Downsized URL: <a href="{GITHUB_RAW_URL}{downsized_filename}">{downsized_filename}</a></p>
     <button onclick="location.href='/upload.html'">Back to Upload</button>
+    <button onclick="location.href='/list'">View Uploaded Files</button>
     '''
 
 # Upload page

@@ -105,14 +105,4 @@ if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
 @app.route('/list', methods=['GET'])
 def list_files():
-    try:
-        files = os.listdir(UPLOAD_FOLDER)
-        if not files:
-            return jsonify({"status": "success", "files": [], "message": "No files uploaded"}), 200
-        
-        file_list = [{"filename": file} for file in files]
-        return jsonify({"status": "success", "files": file_list}), 200
-
-    except Exception as e:
-        print(f"Error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "success", "message": "List endpoint is working!"}), 200

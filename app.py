@@ -59,7 +59,7 @@ def upload_to_github(filename, content):
 
 # Delete file from GitHub
 def delete_from_github(filename):
-    # Encode the file name to handle special characters and slashes
+    # Ensure the filename is properly encoded
     encoded_filename = requests.utils.quote(filename)
     url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{encoded_filename}?ref={GITHUB_BRANCH}"
     headers = {
@@ -70,6 +70,8 @@ def delete_from_github(filename):
     # Get the SHA of the file to be deleted
     get_response = requests.get(url, headers=headers)
     print(f"Getting SHA for file {filename} - Status: {get_response.status_code}")
+    print(f"GET Response: {get_response.text}")
+
     if get_response.status_code == 200:
         sha = get_response.json().get("sha")
         if not sha:
@@ -84,7 +86,7 @@ def delete_from_github(filename):
         }
 
         delete_response = requests.delete(url, headers=headers, data=json.dumps(data))
-        print(f"Delete Response: {delete_response.status_code}, {delete_response.json()}")
+        print(f"Delete Response: {delete_response.status_code}, {delete_response.text}")
 
         if delete_response.status_code == 200:
             print(f"Successfully deleted {filename}")

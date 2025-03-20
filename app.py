@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 import os
 import json
 import base64
@@ -41,136 +41,71 @@ def create_branch(branch_name):
     except Exception as e:
         print(f"Error during branch creation: {str(e)}")
 
-# Test endpoint to check if the server is running
-@app.route('/test')
-def test():
-    return "Test endpoint is working!"
-
-# Serve static files (like JavaScript)
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory('static', filename)
-
-# Upload page (HTML template)
-@app.route('/upload.html')
-def upload_page():
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Upload Page</title>
-        <script src="/static/render_upload.js"></script>
-    </head>
-    <body>
-        <div id="upload-container">Loading...</div>
-    </body>
-    </html>
-    '''
-
-# Render the upload page using JSON (Flex Message format)
-@app.route('/upload_page_json')
-def upload_page_json():
+# Upload file to GitHub on the "file" branch
+def upload_to_github(filename, content):
     try:
-        upload_page_json = {
-            "altText": "Upload File",
-            "contents": {
-                "body": {
-                    "contents": [
-                        {
-                            "margin": "md",
-                            "size": "xl",
-                            "text": "Upload a File",
-                            "type": "text",
-                            "weight": "bold"
-                        },
-                        {
-                            "contents": [
-                                {
-                                    "margin": "md",
-                                    "size": "sm",
-                                    "text": "Select a file to upload:",
-                                    "type": "text"
-                                },
-                                {
-                                    "accept": "image/*",
-                                    "action": {
-                                        "label": "Browse",
-                                        "type": "uri",
-                                        "uri": "/upload"
-                                    },
-                                    "label": "Choose File",
-                                    "name": "file",
-                                    "type": "input"
-                                }
-                            ],
-                            "layout": "vertical",
-                            "type": "box"
-                        },
-                        {
-                            "contents": [
-                                {
-                                    "action": {
-                                        "label": "Upload",
-                                        "text": "Upload",
-                                        "type": "message"
-                                    },
-                                    "color": "#1DB446",
-                                    "margin": "sm",
-                                    "style": "primary",
-                                    "type": "button"
-                                },
-                                {
-                                    "action": {
-                                        "label": "View Uploaded Files",
-                                        "type": "uri",
-                                        "uri": "/list"
-                                    },
-                                    "margin": "sm",
-                                    "style": "secondary",
-                                    "type": "button"
-                                }
-                            ],
-                            "layout": "horizontal",
-                            "margin": "md",
-                            "type": "box"
-                        }
-                    ],
-                    "layout": "vertical",
-                    "type": "box"
-                },
-                "type": "bubble"
-            },
-            "type": "flex"
+        create_branch(GITHUB_BRANCH)
+        url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents/{filename}?ref={GITHUB_BRANCH}"
+        print(f"Uploading to URL: {url}")
+        encoded_content = base64.b64encode(content).decode("utf-8")
+        headers = {
+            "Authorization": f"token {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github.v3+json"
         }
-        print(f"Upload Page JSON: {json.dumps(upload_page_json, indent=2)}")
-        return jsonify(upload_page_json)
+
+        get_response = requests.get(url, headers=headers)
+        print(f"GET Response Status: {get_response.status_code}")
+        print(f"GET Response Text: {get_response.text}")
+
+        sha = None
+        if get_response.status_code == 200:
+            sha = get_response.json().get("sha")
+            print(f"Existing file SHA: {sha}")
+
+        data = {
+            "message": f"Add or update {filename} to {GITHUB_BRANCH}",
+            "content": encoded_content,
+            "branch": GITHUB_BRANCH
+        }
+        if sha:
+            data["sha"] = sha
+
+        response = requests.put(url, headers=headers, data=json.dumps(data))
+        print(f"Upload Response Status: {response.status_code}")
+        print(f"Upload Response Text: {response.text}")
+        return response
     except Exception as e:
-        print(f"Error generating upload page JSON: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        print(f"Error during upload: {str(e)}")
+        return None
 
-# Upload file endpoint
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({"status": "error", "message": "No file part"}), 400
+# Resize the image with adaptive settings to limit size to 300 KB
+def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
+    try:
+        image = Image.open(BytesIO(image_data))
+        image = image.convert("RGB")
+        image.thumbnail(max_size, Image.ANTIALIAS)
 
-    file = request.files['file']
-    content = file.read()
+        quality = 95
+        output = BytesIO()
 
-    original_filename = file.filename
-    downsized_filename = f"downsized_{original_filename}"
-    print(f"Received file: {original_filename}")
+        while quality > 5:
+            output.seek(0)
+            output.truncate()
+            image.save(output, format="JPEG", quality=quality)
+            size = output.tell()
+            print(f"Trying quality {quality}: {size} bytes")
 
-    # Upload original file
-    response = upload_to_github(original_filename, content)
-    print(f"Upload response: {response.status_code} - {response.text}")
+            if size <= target_size:
+                print(f"Successfully downsized image to {size} bytes")
+                return output.getvalue()
 
-    return f'''
-    <h3>Upload Complete!</h3>
-    <p>Original URL: <a href="{GITHUB_RAW_URL}{original_filename}">{original_filename}</a></p>
-    <button onclick="location.href='/upload.html'">Back to Upload</button>
-    <button onclick="location.href='/list'">View Uploaded Files</button>
-    '''
+            quality -= 5
+
+        print(f"Final downsized size: {size} bytes")
+        return output.getvalue()
+    except Exception as e:
+        print(f"Error during image downsizing: {str(e)}")
+        return image_data
 
 # List uploaded files
 @app.route('/list')
@@ -180,13 +115,21 @@ def list_files():
         headers = {"Authorization": f"token {GITHUB_TOKEN}"}
         response = requests.get(url, headers=headers)
 
-        print(f"List files response: {response.status_code} - {response.text}")
+        print(f"List Page URL: {url}")
+        print(f"List Page Response Status: {response.status_code}")
+        print(f"List Page Response Text: {response.text}")
 
         if response.status_code != 200:
             return f"Error fetching file list: {response.json().get('message', 'Unknown error')}", 500
 
         files = response.json()
-        file_list = ''.join(f'<li><a href="{GITHUB_RAW_URL}{file["name"]}">{file["name"]}</a></li>' for file in files)
+        file_list = ''.join(f'''
+            <li>
+                <p>Original: <a href="{GITHUB_RAW_URL}{file['name']}">{file['name']}</a></p>
+                <p>Downsized: <a href="{GITHUB_RAW_URL}downsized_{file['name']}">downsized_{file['name']}</a></p>
+                <button onclick="deleteFile('{file['name']}')">Delete</button>
+            </li>
+        ''' for file in files)
 
         return f'''
         <h2>Uploaded Files</h2>
@@ -197,42 +140,31 @@ def list_files():
         print(f"Error during list page generation: {str(e)}")
         return f"Internal Server Error: {str(e)}", 500
 
-# Home page
-@app.route('/')
-def home():
-    return "Hello, GitHub File Uploader!"
+# Upload endpoint
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"}), 400
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    file = request.files['file']
+    content = file.read()
 
-from flask import Flask, request, jsonify
-import os
-import requests
-import json
+    original_response = upload_to_github(file.filename, content)
+    downsized_content = downsize_image(content)
+    downsized_filename = f"downsized_{file.filename}"
+    downsized_response = upload_to_github(downsized_filename, downsized_content)
 
-app = Flask(__name__)
+    return f'''
+    <h3>Upload Complete!</h3>
+    <p>Original URL: <a href="{GITHUB_RAW_URL}{file.filename}">{file.filename}</a></p>
+    <p>Downsized URL: <a href="{GITHUB_RAW_URL}{downsized_filename}">{downsized_filename}</a></p>
+    <button onclick="location.href='/upload.html'">Back to Upload</button>
+    <button onclick="location.href='/list'">View Uploaded Files</button>
+    '''
 
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-
-@app.route('/')
-def home():
-    return "LINE Flex Messaging API is working!"
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    body = request.get_json()
-    print(f"Received body: {body}")
-
-    if body and "events" in body:
-        for event in body["events"]:
-            if event["type"] == "message" and event["message"]["type"] == "text":
-                reply_token = event["replyToken"]
-                user_message = event["message"]["text"]
-                reply_flex_message(reply_token, user_message)
-    return "OK"
-
-def reply_flex_message(reply_token, message_text):
-    flex_message = {
+@app.route('/upload.html')
+def upload_page():
+    upload_page_json = {
         "type": "flex",
         "altText": "Upload File",
         "contents": {
@@ -259,11 +191,28 @@ def reply_flex_message(reply_token, message_text):
                                 "margin": "md"
                             },
                             {
-                                "type": "button",
+                                "type": "input",
+                                "name": "file",
+                                "label": "Choose File",
+                                "accept": "image/*",
                                 "action": {
                                     "type": "uri",
+                                    "label": "Browse",
+                                    "uri": "/upload"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "type": "box",
+                        "layout": "horizontal",
+                        "contents": [
+                            {
+                                "type": "button",
+                                "action": {
+                                    "type": "message",
                                     "label": "Upload",
-                                    "uri": "https://line-ai-chatbot.vercel.app/upload.html"
+                                    "text": "Upload"
                                 },
                                 "style": "primary",
                                 "color": "#1DB446",
@@ -274,7 +223,7 @@ def reply_flex_message(reply_token, message_text):
                                 "action": {
                                     "type": "uri",
                                     "label": "View Uploaded Files",
-                                    "uri": "https://line-ai-chatbot.vercel.app/list"
+                                    "uri": "/list"
                                 },
                                 "style": "secondary",
                                 "margin": "sm"
@@ -286,23 +235,17 @@ def reply_flex_message(reply_token, message_text):
             }
         }
     }
+    return jsonify(upload_page_json)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
-    }
-
-    payload = {
-        "replyToken": reply_token,
-        "messages": [flex_message]
-    }
-
-    response = requests.post(
-        "https://api.line.me/v2/bot/message/reply",
-        headers=headers,
-        data=json.dumps(payload)
-    )
-    print(f"LINE API response: {response.status_code} - {response.text}")
+# Home page
+@app.route('/')
+def home():
+    return "Hello, GitHub File Uploader!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+from flask import send_from_directory
+
+@app.route('/static/<path:filename>')
+def static_files(filename):
+    return send_from_directory('static', filename)

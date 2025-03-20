@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 import os
 import json
 import base64
@@ -107,68 +107,38 @@ def downsize_image(image_data, max_size=(800, 800), target_size=300 * 1024):
         print(f"Error during image downsizing: {str(e)}")
         return image_data
 
-# Serve static files (like JavaScript)
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory('static', filename)
+# List uploaded files
+@app.route('/list')
+def list_files():
+    try:
+        url = f"{GITHUB_API}/repos/{GITHUB_REPO}/contents?ref={GITHUB_BRANCH}"
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+        response = requests.get(url, headers=headers)
 
-# Upload page
-@app.route('/upload.html')
-def upload_page():
-    return '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Upload Page</title>
-        <script src="/static/render_upload.js"></script>
-    </head>
-    <body>
-        <div id="upload-container"></div>
-    </body>
-    </html>
-    '''
+        print(f"List Page URL: {url}")
+        print(f"List Page Response Status: {response.status_code}")
+        print(f"List Page Response Text: {response.text}")
 
-# Render the upload page using JSON
-@app.route('/upload_page_json')
-def upload_page_json():
-    upload_page_json = {
-        "type": "flex",
-        "altText": "Upload File",
-        "contents": {
-            "type": "bubble",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": "Upload a File",
-                        "weight": "bold",
-                        "size": "xl",
-                        "margin": "md"
-                    },
-                    {
-                        "type": "box",
-                        "layout": "vertical",
-                        "contents": [
-                            {
-                                "type": "text",
-                                "text": "Select a file to upload:",
-                                "size": "sm",
-                                "margin": "md"
-                            }
-                        ]
-                    }
-                ]
-            }
-        }
-    }
-    return jsonify(upload_page_json)
+        if response.status_code != 200:
+            return f"Error fetching file list: {response.json().get('message', 'Unknown error')}", 500
 
-# Home page
-@app.route('/')
-def home():
-    return "Hello, GitHub File Uploader!"
+        files = response.json()
+        file_list = ''.join(f'''
+            <li>
+                <p>Original: <a href="{GITHUB_RAW_URL}{file['name']}">{file['name']}</a></p>
+                <p>Downsized: <a href="{GITHUB_RAW_URL}downsized_{file['name']}">downsized_{file['name']}</a></p>
+                <button onclick="deleteFile('{file['name']}')">Delete</button>
+            </li>
+        ''' for file in files)
+
+        return f'''
+        <h2>Uploaded Files</h2>
+        <ul>{file_list}</ul>
+        <button onclick="location.href='/upload.html'">Back to Upload</button>
+        '''
+    except Exception as e:
+        print(f"Error during list page generation: {str(e)}")
+        return f"Internal Server Error: {str(e)}", 500
 
 # Upload endpoint
 @app.route('/upload', methods=['POST'])
@@ -191,6 +161,23 @@ def upload_file():
     <button onclick="location.href='/upload.html'">Back to Upload</button>
     <button onclick="location.href='/list'">View Uploaded Files</button>
     '''
+
+# Upload page
+@app.route('/upload.html')
+def upload_page():
+    return '''
+    <h2>Upload a File</h2>
+    <form method="POST" enctype="multipart/form-data" action="/upload">
+        <input type="file" name="file" required>
+        <button type="submit">Upload</button>
+    </form>
+    <button onclick="location.href='/list'">View Uploaded Files</button>
+    '''
+
+# Home page
+@app.route('/')
+def home():
+    return "Hello, GitHub File Uploader!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)

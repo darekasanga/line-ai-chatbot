@@ -162,17 +162,80 @@ def upload_file():
     <button onclick="location.href='/list'">View Uploaded Files</button>
     '''
 
-# Upload page
 @app.route('/upload.html')
 def upload_page():
-    return '''
-    <h2>Upload a File</h2>
-    <form method="POST" enctype="multipart/form-data" action="/upload">
-        <input type="file" name="file" required>
-        <button type="submit">Upload</button>
-    </form>
-    <button onclick="location.href='/list'">View Uploaded Files</button>
-    '''
+    upload_page_json = {
+        "type": "flex",
+        "altText": "Upload File",
+        "contents": {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": "Upload a File",
+                        "weight": "bold",
+                        "size": "xl",
+                        "margin": "md"
+                    },
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": "Select a file to upload:",
+                                "size": "sm",
+                                "margin": "md"
+                            },
+                            {
+                                "type": "input",
+                                "name": "file",
+                                "label": "Choose File",
+                                "accept": "image/*",
+                                "action": {
+                                    "type": "uri",
+                                    "label": "Browse",
+                                    "uri": "/upload"
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "type": "box",
+                        "layout": "horizontal",
+                        "contents": [
+                            {
+                                "type": "button",
+                                "action": {
+                                    "type": "message",
+                                    "label": "Upload",
+                                    "text": "Upload"
+                                },
+                                "style": "primary",
+                                "color": "#1DB446",
+                                "margin": "sm"
+                            },
+                            {
+                                "type": "button",
+                                "action": {
+                                    "type": "uri",
+                                    "label": "View Uploaded Files",
+                                    "uri": "/list"
+                                },
+                                "style": "secondary",
+                                "margin": "sm"
+                            }
+                        ],
+                        "margin": "md"
+                    }
+                ]
+            }
+        }
+    }
+    return jsonify(upload_page_json)
 
 # Home page
 @app.route('/')

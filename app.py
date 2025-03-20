@@ -249,3 +249,6 @@ from flask import send_from_directory
 @app.route('/static/<path:filename>')
 def static_files(filename):
     return send_from_directory('static', filename)
+@app.route('/test')
+def test():
+    return "Test endpoint is working!"

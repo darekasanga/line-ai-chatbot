@@ -38,3 +38,5 @@ def handle_text_message(event):
         event.reply_token,
         TextSendMessage(text=f"You said: {text}")
     )
+# Vercelがエントリーポイントとして使う
+app = app

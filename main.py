@@ -17,7 +17,6 @@ CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# Webhook endpoint (only once!)
 @app.post("/webhook")
 async def webhook(request: Request):
     signature = request.headers.get("X-Line-Signature")
@@ -30,7 +29,6 @@ async def webhook(request: Request):
 
     return JSONResponse(content={"message": "OK"})
 
-# Handle messages
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text_message(event):
     text = event.message.text
@@ -38,5 +36,3 @@ def handle_text_message(event):
         event.reply_token,
         TextSendMessage(text=f"You said: {text}")
     )
-# Vercelがエントリーポイントとして使う
-app = app

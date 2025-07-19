@@ -104,3 +104,24 @@ def handle_image_upload(user_id: str, message_id: str):
         "messages": [{"type": "text", "text": "画像を受け取り、アップロードしました！"}]
     }
     requests.post("https://api.line.me/v2/bot/message/push", headers=reply_headers, json=reply_payload)
+# ↑ main.py の最後に追加
+from fastapi.responses import HTMLResponse
+
+@app.get("/list", response_class=HTMLResponse)
+def list_images():
+    urls = get_uploaded_image_urls()
+    html = "<h1>📸 画像一覧</h1><div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1em;'>"
+    for url in urls:
+        html += f"<div><img src='{url}' width='200'/><p>{url}</p></div>"
+    html += "</div>"
+    return html
+
+def get_uploaded_image_urls():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}?ref={GITHUB_BRANCH}"
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    res = requests.get(url, headers=headers)
+    if res.status_code != 200:
+        return []
+
+    files = res.json()
+    return [f["download_url"] for f in files if f["name"].endswith((".jpg", ".png", ".jpeg", ".gif"))]

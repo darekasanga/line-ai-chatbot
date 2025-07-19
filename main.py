@@ -1,11 +1,11 @@
 from fastapi import FastAPI, Request
 from linebot import LineBotApi, WebhookHandler
 from linebot.models import MessageEvent, FileMessage, TextSendMessage
-import base64, requests, os
+import base64, requests, os, threading
 
 app = FastAPI()
 
-# Load from environment
+# Environment variables (set in Vercel)
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
@@ -18,8 +18,17 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 @app.post("/webhook")
 async def webhook(request: Request):
     body = await request.body()
-    signature = request.headers["X-Line-Signature"]
-    handler.handle(body.decode("utf-8"), signature)
+    signature = request.headers.get("X-Line-Signature")
+
+    # Handle in background thread to avoid timeout
+    def handle_async():
+        try:
+            handler.handle(body.decode("utf-8"), signature)
+        except Exception as e:
+            print(f"❌ Error in handler: {e}")
+
+    threading.Thread(target=handle_async).start()
+
     return "OK"
 
 @handler.add(MessageEvent, message=FileMessage)
@@ -27,16 +36,32 @@ def handle_file(event):
     message_id = event.message.id
     file_name = event.message.file_name
 
-    file_content = line_bot_api.get_message_content(message_id)
-    binary_data = b''.join(chunk for chunk in file_content.iter_content())
+    try:
+        # Get file content
+        file_content = line_bot_api.get_message_content(message_id)
+        binary_data = b''.join(chunk for chunk in file_content.iter_content())
 
-    # Upload to GitHub
-    upload_to_github(file_name, binary_data)
+        # Upload to GitHub
+        success = upload_to_github(file_name, binary_data)
 
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=f"✅ Uploaded `{file_name}` to GitHub!")
-    )
+        # Respond to user
+        if success:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"✅ File `{file_name}` uploaded to GitHub!")
+            )
+        else:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"❌ Failed to upload `{file_name}`.")
+            )
+
+    except Exception as e:
+        print(f"❌ File handler error: {e}")
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="⚠️ Error processing your file.")
+        )
 
 def upload_to_github(filename, data):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/uploads/{filename}"
@@ -49,6 +74,7 @@ def upload_to_github(filename, data):
         "content": base64.b64encode(data).decode("utf-8"),
         "branch": GITHUB_BRANCH
     }
+
     response = requests.put(url, headers=headers, json=payload)
-    if response.status_code >= 400:
-        print(f"❌ GitHub upload failed: {response.json()}")
+    print(f"📤 GitHub response: {response.status_code} {response.text}")
+    return response.status_code in [200, 201]

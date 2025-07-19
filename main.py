@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-app = FastAPI()
+app = FastAPI()  # これが絶対に必要！
 
 @app.get("/")
 async def root():
@@ -12,3 +12,4 @@ async def webhook(request: Request):
     body = await request.json()
     print("Webhook received:", body)
     return JSONResponse(content={"message": "Webhook OK"})
+    

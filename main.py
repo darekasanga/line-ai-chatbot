@@ -1,72 +1,71 @@
-from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.responses import JSONResponse
-import hashlib
-import hmac
 import os
-import requests
 import base64
-import time
+import requests
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from linebot import LineBotApi, WebhookHandler
+from linebot.models import MessageEvent, ImageMessage
+from linebot.exceptions import InvalidSignatureError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
-LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+# Environment variables
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO = "darekasanga/line-ai-chatbot"
-GITHUB_BRANCH = "main"
-UPLOAD_PATH = "uploaded_files"
+GITHUB_BRANCH = "file"
+
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 @app.get("/")
 def root():
     return {"message": "Hello from FastAPI on Vercel!"}
 
 @app.post("/webhook")
-async def webhook(request: Request, background_tasks: BackgroundTasks):
+async def webhook(request: Request):
+    signature = request.headers.get("X-Line-Signature")
     body = await request.body()
-    signature = request.headers.get("x-line-signature", "")
-    
-    if not is_valid_signature(body, signature):
-        return JSONResponse(status_code=403, content={"message": "Invalid signature"})
 
-    events = (await request.json()).get("events", [])
-    for event in events:
-        if event["type"] == "message" and event["message"]["type"] == "text":
-            user_id = event["source"]["userId"]
-            user_msg = event["message"]["text"]
-            background_tasks.add_task(respond_and_upload, user_id, user_msg)
+    try:
+        handler.handle(body.decode("utf-8"), signature)
+    except InvalidSignatureError:
+        return JSONResponse(status_code=400, content={"message": "Invalid signature"})
 
-    return JSONResponse(content={"message": "OK"})
+    return {"message": "OK"}
 
-def is_valid_signature(body: bytes, signature: str) -> bool:
-    hash = hmac.new(LINE_CHANNEL_SECRET.encode(), body, hashlib.sha256).digest()
-    encoded = base64.b64encode(hash).decode()
-    return hmac.compare_digest(encoded, signature)
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image(event):
+    message_id = event.message.id
+    image_content = line_bot_api.get_message_content(message_id)
+    local_path = f"/tmp/{message_id}.jpg"
 
-def respond_and_upload(user_id: str, msg: str):
-    # 1. reply to user
-    reply_msg = f"You said: {msg}"
-    headers = {
-        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "to": user_id,
-        "messages": [{"type": "text", "text": reply_msg}]
-    }
-    requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
+    with open(local_path, "wb") as f:
+        for chunk in image_content.iter_content():
+            f.write(chunk)
 
-    # 2. upload to GitHub
-    filename = f"{int(time.time())}.txt"
-    content = base64.b64encode(msg.encode()).decode()
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename}"
-    commit_msg = f"Upload from LINE user {user_id}"
-    data = {
-        "message": commit_msg,
-        "content": content,
-        "branch": GITHUB_BRANCH
-    }
+    # Upload to GitHub
+    upload_to_github(local_path, f"{message_id}.jpg")
+
+def upload_to_github(local_path, repo_path):
+    with open(local_path, "rb") as f:
+        content = base64.b64encode(f.read()).decode("utf-8")
+
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{repo_path}"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-    requests.put(url, headers=headers, json=data)
+
+    data = {
+        "message": f"Upload {repo_path}",
+        "content": content,
+        "branch": GITHUB_BRANCH
+    }
+
+    res = requests.put(url, headers=headers, json=data)
+    print(res.status_code, res.json())

@@ -5,6 +5,10 @@ import base64, requests, os, threading
 
 app = FastAPI()
 
+@app.get("/")
+def root():
+    return {"message": "LINE Chatbot is live!"}
+
 # Environment variables (set in Vercel)
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")

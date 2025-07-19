@@ -9,7 +9,6 @@ app = FastAPI()
 def root():
     return {"message": "LINE Chatbot is live!"}
 
-# Environment variables (set in Vercel)
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
@@ -24,7 +23,6 @@ async def webhook(request: Request):
     body = await request.body()
     signature = request.headers.get("X-Line-Signature")
 
-    # Handle in background thread to avoid timeout
     def handle_async():
         try:
             handler.handle(body.decode("utf-8"), signature)
@@ -32,7 +30,6 @@ async def webhook(request: Request):
             print(f"❌ Error in handler: {e}")
 
     threading.Thread(target=handle_async).start()
-
     return "OK"
 
 @handler.add(MessageEvent, message=FileMessage)
@@ -41,30 +38,25 @@ def handle_file(event):
     file_name = event.message.file_name
 
     try:
-        # Get file content
         file_content = line_bot_api.get_message_content(message_id)
         binary_data = b''.join(chunk for chunk in file_content.iter_content())
 
-        # Upload to GitHub
-        success = upload_to_github(file_name, binary_data)
-
-        # Respond to user
-        if success:
+        if upload_to_github(file_name, binary_data):
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=f"✅ File `{file_name}` uploaded to GitHub!")
+                TextSendMessage(text=f"✅ Uploaded `{file_name}` to GitHub!")
             )
         else:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=f"❌ Failed to upload `{file_name}`.")
+                TextSendMessage(text=f"❌ Upload failed.")
             )
 
     except Exception as e:
-        print(f"❌ File handler error: {e}")
+        print(f"❌ File error: {e}")
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="⚠️ Error processing your file.")
+            TextSendMessage(text="⚠️ Error processing file.")
         )
 
 def upload_to_github(filename, data):
@@ -79,6 +71,6 @@ def upload_to_github(filename, data):
         "branch": GITHUB_BRANCH
     }
 
-    response = requests.put(url, headers=headers, json=payload)
-    print(f"📤 GitHub response: {response.status_code} {response.text}")
-    return response.status_code in [200, 201]
+    res = requests.put(url, headers=headers, json=payload)
+    print(f"📤 GitHub response: {res.status_code} {res.text}")
+    return res.status_code in [200, 201]

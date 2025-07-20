@@ -1,4 +1,7 @@
 {
+  "type": "flex",
+  "altText": "画像が保存されました",
+  "contents": {
   "type": "bubble",
   "size": "hecto",
   "body": {
@@ -76,4 +79,5 @@
       }
     ]
   }
+}
 }

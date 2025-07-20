@@ -80,6 +80,7 @@ def send_flex_message(reply_token: str, preview_url: str, original_url: str, res
 @app.post("/callback")
 async def callback(request: Request):
     body = await request.json()
+    print("LINE受信内容:", body)  # ←追加
     events = body.get("events", [])
     for event in events:
         if event["type"] == "message" and event["message"]["type"] == "image":

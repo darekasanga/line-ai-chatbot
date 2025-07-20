@@ -6,8 +6,8 @@ import base64
 import hashlib
 import hmac
 import time
-import json
-from datetime import datetime, timedelta
+from PIL import Image  # 🆕 画像処理
+from io import BytesIO
 
 app = FastAPI()
 
@@ -71,57 +71,96 @@ def handle_image(message_id: str, user_id: str):
     res = requests.get(f"https://api-data.line.me/v2/bot/message/{message_id}/content", headers=headers)
     if res.status_code != 200:
         return
+
     image_data = res.content
     timestamp = int(time.time())
     filename = f"image_{timestamp}.jpg"
-    content = base64.b64encode(image_data).decode()
+    small_filename = f"image_{timestamp}_small.jpg"
+
+    # 🆕 Resize image
+    original = Image.open(BytesIO(image_data))
+    small_io = BytesIO()
+    original.save(BytesIO(), format="JPEG")
+    original.thumbnail((1024, 1024))  # 約300KBになる程度に調整
+    original.save(small_io, format="JPEG", quality=70)
+    small_data = small_io.getvalue()
+
+    # 🧩 Upload both images
+    upload_to_github(filename, image_data)
+    upload_to_github(small_filename, small_data)
+
+    # 🆕 Reply Flex Message
+    preview_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{small_filename}"
+    original_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{filename}"
+    send_flex_image_reply(user_id, preview_url, original_url)
+
+# 🧩 Upload to GitHub
+def upload_to_github(filename: str, content_bytes: bytes):
+    content = base64.b64encode(content_bytes).decode()
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename}"
-    commit_msg = f"Upload image {filename}"
     data = {
-        "message": commit_msg,
+        "message": f"Upload {filename}",
         "content": content,
         "branch": GITHUB_BRANCH
     }
-    gh_headers = {
+    headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-    res_upload = requests.put(url, headers=gh_headers, json=data)
-    if res_upload.status_code in [200, 201]:
-        base_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{filename}"
-        send_flex_message(user_id, base_url, base_url, base_url)
+    requests.put(url, headers=headers, json=data)
 
-# 🆕 Load Flex Message Template and fill in
-def load_flex_message(original_url, small_url, preview_url):
-    with open("flex_message.json", "r", encoding="utf-8") as f:
-        raw_json = f.read()
+# 🧩 Send Flex Message with preview and buttons
+def send_flex_image_reply(user_id: str, preview_url: str, original_url: str):
+    flex_msg = {
+        "type": "flex",
+        "altText": "画像が保存されました",
+        "contents": {
+            "type": "bubble",
+            "hero": {
+                "type": "image",
+                "url": preview_url,
+                "size": "full",
+                "aspectRatio": "2:3",
+                "aspectMode": "fit"
+            },
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "md",
+                "contents": [
+                    {"type": "text", "text": "画像が保存されました。", "weight": "bold", "size": "md"},
+                    {"type": "text", "text": f"投稿日時：{time.strftime('%Y/%m/%d %H:%M')}"},
+                    {"type": "text", "text": f"保存期間：{time.strftime('%Y/%m/%d', time.localtime(time.time() + 30*24*3600))} まで"}
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "horizontal",
+                "spacing": "md",
+                "contents": [
+                    {
+                        "type": "button",
+                        "style": "primary",
+                        "color": "#00AA00",
+                        "action": {"type": "uri", "label": "スモールサイズURL", "uri": preview_url}
+                    },
+                    {
+                        "type": "button",
+                        "style": "secondary",
+                        "action": {"type": "uri", "label": "オリジナルURL", "uri": original_url}
+                    }
+                ]
+            }
+        }
+    }
 
-    now = datetime.now()
-    post_date = now.strftime("%Y-%m-%d %H:%M")
-    expire_date = (now + timedelta(days=30)).strftime("%Y-%m-%d")
-
-    filled_json = raw_json.replace("{{original_url}}", original_url) \
-                          .replace("{{small_url}}", small_url) \
-                          .replace("{{preview_url}}", preview_url) \
-                          .replace("{{post_date}}", post_date) \
-                          .replace("{{expire_date}}", expire_date)
-
-    return json.loads(filled_json)
-
-# 🆕 Send Flex Message to LINE
-def send_flex_message(user_id, original_url, small_url, preview_url):
     headers = {
         "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
-    flex_content = load_flex_message(original_url, small_url, preview_url)
     payload = {
         "to": user_id,
-        "messages": [{
-            "type": "flex",
-            "altText": "画像を保存しました",
-            "contents": flex_content
-        }]
+        "messages": [flex_msg]
     }
     requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
 

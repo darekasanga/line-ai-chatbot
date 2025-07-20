@@ -6,8 +6,8 @@ import base64
 import hashlib
 import hmac
 import time
-from PIL import Image
-from io import BytesIO
+from PIL import Image  # 🆕 画像処理
+import io
 
 app = FastAPI()
 
@@ -16,7 +16,6 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_REPO = "darekasanga/line-ai-chatbot"
 GITHUB_BRANCH = "main"
 UPLOAD_PATH = "uploaded_files"
-RESIZED_PATH = "resized_files"
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 
@@ -66,118 +65,120 @@ def reply_text(user_id: str, msg: str):
     }
     requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
 
+# 🆕 Resize image to under 300KB
+def resize_image_to_under_300kb(image_data: bytes) -> bytes:
+    image = Image.open(io.BytesIO(image_data)).convert("RGB")
+    quality = 95
+    while quality > 10:
+        buffer = io.BytesIO()
+        image.save(buffer, format="JPEG", quality=quality)
+        if buffer.tell() <= 300 * 1024:
+            return buffer.getvalue()
+        quality -= 5
+    return buffer.getvalue()
+
 # 🧩 Handle image message
 def handle_image(message_id: str):
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
     res = requests.get(f"https://api-data.line.me/v2/bot/message/{message_id}/content", headers=headers)
     if res.status_code != 200:
         return
+
     image_data = res.content
     timestamp = int(time.time())
     filename = f"image_{timestamp}.jpg"
     resized_filename = f"image_{timestamp}_small.jpg"
 
-    # Upload original
     content = base64.b64encode(image_data).decode()
+    resized_image_data = resize_image_to_under_300kb(image_data)
+    resized_content = base64.b64encode(resized_image_data).decode()
+
+    upload_to_github(filename, content)
+    upload_to_github(resized_filename, resized_content)
+
+# 🆕 Upload helper
+def upload_to_github(filename: str, content: str):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename}"
-    commit_msg = f"Upload image {filename}"
     data = {
-        "message": commit_msg,
+        "message": f"Upload {filename}",
         "content": content,
         "branch": GITHUB_BRANCH
     }
-    headers_upload = {
+    headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-    requests.put(url, headers=headers_upload, json=data)
-
-    # 🆕 Resize and upload resized image
-    try:
-        img = Image.open(BytesIO(image_data))
-        buffer = BytesIO()
-        img.save(buffer, format="JPEG", quality=85)
-        while buffer.tell() > 300 * 1024:  # 300KB
-            buffer = BytesIO()
-            img.save(buffer, format="JPEG", quality=75)
-        resized_content = base64.b64encode(buffer.getvalue()).decode()
-        resize_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{RESIZED_PATH}/{resized_filename}"
-        resize_data = {
-            "message": f"Upload resized image {resized_filename}",
-            "content": resized_content,
-            "branch": GITHUB_BRANCH
-        }
-        requests.put(resize_url, headers=headers_upload, json=resize_data)
-    except:
-        pass
+    requests.put(url, headers=headers, json=data)
 
 # 🧩 Get image URLs from GitHub
 def get_uploaded_image_urls():
-    def fetch(path):
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}?ref={GITHUB_BRANCH}"
-        headers = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        res = requests.get(url, headers=headers)
-        return res.json() if res.status_code == 200 else []
-
-    originals = fetch(UPLOAD_PATH)
-    resized = fetch(RESIZED_PATH)
-
-    resized_map = {f["name"]: f["download_url"] for f in resized if f["name"].endswith(".jpg")}
-    image_pairs = []
-    for f in originals:
-        if f["name"].endswith(".jpg"):
-            original_url = f["download_url"]
-            resized_url = resized_map.get(f["name"].replace(".jpg", "_small.jpg"))
-            image_pairs.append({"original": original_url, "resized": resized_url, "name": f["name"]})
-    return image_pairs
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}?ref={GITHUB_BRANCH}"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    res = requests.get(url, headers=headers)
+    if res.status_code != 200:
+        return []
+    files = res.json()
+    image_urls = []
+    for f in files:
+        if f["name"].lower().endswith((".png", ".jpg", ".jpeg", ".gif")):
+            image_urls.append((f["name"], f["download_url"]))
+    return image_urls
 
 # 🧩 HTML image list
 @app.get("/list", response_class=HTMLResponse)
 def list_images():
     items = get_uploaded_image_urls()
-    html = "<h1>📸 画像一覧</h1><div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1em;'>"
-    for item in items:
-        html += f"""
-        <div>
-            <img src='{item['original']}' width='200'/><br/>
-            <form action='/delete' method='post'>
-                <input type='hidden' name='filename' value='{item['name']}'/>
-                <button type='submit'>❌ 削除</button>
-            </form>
-            <p>{item['name']}</p>
-            <a href='{item['original']}' target='_blank'>🔗 オリジナル</a><br/>
-            {f"<a href='{item['resized']}' target='_blank'>🔗 300KB版</a>" if item['resized'] else ''}
-        </div>
-        """
+    html = "<h1>📸 画像一覧</h1><div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1em;'>"
+    grouped = {}
+    for name, url in items:
+        base = name.replace("_small", "").rsplit(".", 1)[0]
+        grouped.setdefault(base, {})
+        if "_small" in name:
+            grouped[base]["small"] = (name, url)
+        else:
+            grouped[base]["original"] = (name, url)
+
+    for base, versions in grouped.items():
+        html += "<div>"
+        if "original" in versions:
+            html += f"<img src='{versions['original'][1]}' width='200'/><br/>"
+        html += "<form action='/delete' method='post'>"
+        if "original" in versions:
+            html += f"<input type='hidden' name='filename' value='{versions['original'][0]}'/>"
+            html += f"<button type='submit'>❌ Delete Original</button><br/>"
+            html += f"<a href='{versions['original'][1]}' target='_blank'>🔗 Original URL</a><br/>"
+        if "small" in versions:
+            html += f"<input type='hidden' name='filename' value='{versions['small'][0]}'/>"
+            html += f"<button type='submit'>❌ Delete Small</button><br/>"
+            html += f"<a href='{versions['small'][1]}' target='_blank'>🔗 Small URL</a>"
+        html += "</form></div>"
     html += "</div>"
     return html
 
 # 🧩 Delete image
 @app.post("/delete")
 def delete_file(filename: str = Form(...)):
-    def delete_from(path):
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{path}/{filename}"
-        headers = {
-            "Authorization": f"token {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        res = requests.get(url, headers=headers)
-        if res.status_code != 200:
-            return False
-        sha = res.json().get("sha")
-        data = {
-            "message": f"Delete {filename}",
-            "sha": sha,
-            "branch": GITHUB_BRANCH
-        }
-        return requests.delete(url, headers=headers, json=data).status_code in [200, 204]
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename}"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    res = requests.get(url, headers=headers)
+    if res.status_code != 200:
+        return HTMLResponse(content="ファイルが見つかりませんでした", status_code=404)
 
-    deleted = delete_from(UPLOAD_PATH)
-    delete_from(RESIZED_PATH)  # Try resized version too
-    if deleted:
+    sha = res.json().get("sha")
+    data = {
+        "message": f"Delete {filename}",
+        "sha": sha,
+        "branch": GITHUB_BRANCH
+    }
+
+    delete_res = requests.delete(url, headers=headers, json=data)
+    if delete_res.status_code in [200, 204]:
         return RedirectResponse(url="/list", status_code=303)
     else:
-        return HTMLResponse(content="ファイルが見つかりませんでした", status_code=404)
+        return HTMLResponse(content="削除に失敗しました", status_code=500)

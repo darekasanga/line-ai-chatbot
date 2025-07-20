@@ -16,23 +16,21 @@ async def callback(request: Request):
                 )
                 image_bytes = image_res.content
 
-                # オリジナル画像を保存
                 original_filename = f"{message_id}.jpg"
                 original_url = save_image_to_github(image_bytes, original_filename)
 
-                # リサイズ画像を保存
                 resized_data = resize_image(image_bytes)
                 resized_filename = f"{message_id}_resized.jpg"
                 resized_url = save_image_to_github(resized_data, resized_filename)
 
-                # FlexMessage送信
                 send_flex_message(
                     reply_token,
                     preview_url=resized_url,
                     original_url=original_url,
                     resized_url=resized_url
                 )
-        return "ok"
+
+        return "ok"  # ✅ 最後にreturn
     except Exception as e:
         import traceback
         traceback.print_exc()

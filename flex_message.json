@@ -1,0 +1,67 @@
+{
+  "type": "bubble",
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "spacing": "md",
+    "contents": [
+      {
+        "type": "text",
+        "text": "画像を保存しました。",
+        "weight": "bold",
+        "size": "lg"
+      },
+      {
+        "type": "text",
+        "text": "投稿日時：{{post_date}}",
+        "size": "sm",
+        "color": "#888888",
+        "margin": "xs"
+      },
+      {
+        "type": "text",
+        "text": "保存期間：{{expire_date}}まで",
+        "size": "sm",
+        "color": "#888888",
+        "margin": "xs"
+      },
+      {
+        "type": "image",
+        "url": "{{preview_url}}",
+        "size": "full",
+        "aspectMode": "cover",
+        "aspectRatio": "1.51:1",
+        "margin": "md"
+      },
+      {
+        "type": "box",
+        "layout": "horizontal",
+        "spacing": "md",
+        "contents": [
+          {
+            "type": "button",
+            "action": {
+              "type": "uri",
+              "label": "オリジナル画像",
+              "uri": "{{original_url}}"
+            },
+            "color": "#4CAF50",
+            "style": "primary",
+            "height": "sm"
+          },
+          {
+            "type": "button",
+            "action": {
+              "type": "uri",
+              "label": "軽量画像",
+              "uri": "{{small_url}}"
+            },
+            "color": "#4CAF50",
+            "style": "primary",
+            "height": "sm"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,64 +1,75 @@
 {
   "type": "bubble",
+  "size": "hecto",
   "body": {
     "type": "box",
     "layout": "vertical",
-    "spacing": "md",
     "contents": [
-      {
-        "type": "text",
-        "text": "画像を保存しました。",
-        "weight": "bold",
-        "size": "lg"
-      },
-      {
-        "type": "text",
-        "text": "投稿日時：{{post_date}}",
-        "size": "sm",
-        "color": "#888888",
-        "margin": "xs"
-      },
-      {
-        "type": "text",
-        "text": "保存期間：{{expire_date}}まで",
-        "size": "sm",
-        "color": "#888888",
-        "margin": "xs"
-      },
       {
         "type": "image",
         "url": "{{preview_url}}",
-        "size": "full",
         "aspectMode": "fit",
-        "aspectRatio": "2:3",
-        "margin": "md",
-        "gravity": "center"
+        "size": "full"
       },
       {
         "type": "box",
-        "layout": "horizontal",
-        "spacing": "md",
+        "layout": "vertical",
+        "paddingTop": "5px",
+        "paddingBottom": "5px",
+        "backgroundColor": "#f5deb3",
+        "contents": [
+          {
+            "type": "text",
+            "text": "画像が保存されました。",
+            "color": "#000000",
+            "size": "12px",
+            "offsetStart": "20px"
+          },
+          {
+            "type": "text",
+            "text": "投稿日時：{{post_date}}",
+            "color": "#000000",
+            "size": "12px",
+            "offsetStart": "20px",
+            "margin": "xs"
+          },
+          {
+            "type": "text",
+            "text": "保存期間：{{delete_date}}まで",
+            "color": "#000000",
+            "size": "12px",
+            "offsetStart": "20px",
+            "margin": "xs"
+          }
+        ]
+      },
+      {
+        "type": "box",
+        "layout": "vertical",
+        "backgroundColor": "#fffff0",
+        "paddingAll": "10px",
         "contents": [
           {
             "type": "button",
+            "style": "primary",
+            "color": "#008080",
             "action": {
               "type": "uri",
-              "label": "オリジナル画像",
+              "label": "オリジナル画像を見る",
               "uri": "{{original_url}}"
             },
-            "color": "#4CAF50",
-            "style": "primary",
             "height": "sm"
           },
           {
             "type": "button",
+            "style": "primary",
+            "color": "#008080",
+            "margin": "sm",
             "action": {
               "type": "uri",
-              "label": "軽量画像",
-              "uri": "{{small_url}}"
+              "label": "サイズ圧縮画像を見る",
+              "uri": "{{resized_url}}"
             },
-            "color": "#4CAF50",
-            "style": "primary",
             "height": "sm"
           }
         ]

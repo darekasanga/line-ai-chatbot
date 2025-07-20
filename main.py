@@ -7,7 +7,7 @@ import hashlib
 import hmac
 import time
 from PIL import Image  # 🆕 画像処理
-import io
+from io import BytesIO
 
 app = FastAPI()
 
@@ -43,7 +43,7 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
             elif event["message"]["type"] == "image":
                 user_id = event["source"]["userId"]
                 message_id = event["message"]["id"]
-                background_tasks.add_task(handle_image, message_id)
+                background_tasks.add_task(handle_image, message_id, user_id)  # 🆕 user_idも渡す
 
     return JSONResponse(content={"message": "OK"})
 
@@ -65,50 +65,84 @@ def reply_text(user_id: str, msg: str):
     }
     requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
 
-# 🆕 Resize image to under 300KB
-def resize_image_to_under_300kb(image_data: bytes) -> bytes:
-    image = Image.open(io.BytesIO(image_data)).convert("RGB")
-    quality = 95
-    while quality > 10:
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=quality)
-        if buffer.tell() <= 300 * 1024:
-            return buffer.getvalue()
-        quality -= 5
-    return buffer.getvalue()
+# 🧩 Reply with Flex Message buttons
+def reply_image_buttons(user_id: str, url_original: str, url_small: str):
+    headers = {
+        "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    flex_msg = {
+        "type": "flex",
+        "altText": "画像がアップロードされました！",
+        "contents": {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "spacing": "md",
+                "contents": [
+                    {"type": "text", "text": "✅ 画像アップロード完了！", "weight": "bold", "size": "lg"},
+                    {"type": "text", "text": "🖼 オリジナル画像", "weight": "bold"},
+                    {"type": "button", "action": {"type": "uri", "label": "🔗 開く", "uri": url_original}, "style": "primary", "height": "sm"},
+                    {"type": "text", "text": "📉 リサイズ画像", "weight": "bold", "margin": "md"},
+                    {"type": "button", "action": {"type": "uri", "label": "🔗 開く", "uri": url_small}, "style": "secondary", "height": "sm"}
+                ]
+            }
+        }
+    }
+    payload = {
+        "to": user_id,
+        "messages": [flex_msg]
+    }
+    requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
 
 # 🧩 Handle image message
-def handle_image(message_id: str):
+def handle_image(message_id: str, user_id: str):  # 🆕 user_id追加
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
     res = requests.get(f"https://api-data.line.me/v2/bot/message/{message_id}/content", headers=headers)
     if res.status_code != 200:
         return
-
     image_data = res.content
     timestamp = int(time.time())
-    filename = f"image_{timestamp}.jpg"
-    resized_filename = f"image_{timestamp}_small.jpg"
+    filename_original = f"image_{timestamp}.jpg"
+    filename_small = f"image_{timestamp}_small.jpg"
 
-    content = base64.b64encode(image_data).decode()
-    resized_image_data = resize_image_to_under_300kb(image_data)
-    resized_content = base64.b64encode(resized_image_data).decode()
-
-    upload_to_github(filename, content)
-    upload_to_github(resized_filename, resized_content)
-
-# 🆕 Upload helper
-def upload_to_github(filename: str, content: str):
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename}"
-    data = {
-        "message": f"Upload {filename}",
-        "content": content,
-        "branch": GITHUB_BRANCH
-    }
-    headers = {
+    # GitHubにアップロードするヘッダと共通情報
+    github_headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-    requests.put(url, headers=headers, json=data)
+
+    # オリジナルアップロード
+    content_original = base64.b64encode(image_data).decode()
+    url_original = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename_original}"
+    data_original = {
+        "message": f"Upload original {filename_original}",
+        "content": content_original,
+        "branch": GITHUB_BRANCH
+    }
+    requests.put(url_original, headers=github_headers, json=data_original)
+
+    # リサイズ処理（約300KB）
+    img = Image.open(BytesIO(image_data))
+    buffer = BytesIO()
+    img.save(buffer, format="JPEG", quality=70, optimize=True)
+    small_data = buffer.getvalue()
+    content_small = base64.b64encode(small_data).decode()
+    url_small = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename_small}"
+    data_small = {
+        "message": f"Upload resized {filename_small}",
+        "content": content_small,
+        "branch": GITHUB_BRANCH
+    }
+    requests.put(url_small, headers=github_headers, json=data_small)
+
+    # URL作成
+    public_url_original = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{filename_original}"
+    public_url_small = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{filename_small}"
+
+    # 🆕 ボタン付きメッセージを返信
+    reply_image_buttons(user_id, public_url_original, public_url_small)
 
 # 🧩 Get image URLs from GitHub
 def get_uploaded_image_urls():
@@ -124,37 +158,26 @@ def get_uploaded_image_urls():
     image_urls = []
     for f in files:
         if f["name"].lower().endswith((".png", ".jpg", ".jpeg", ".gif")):
-            image_urls.append((f["name"], f["download_url"]))
+            image_urls.append(f["download_url"])
     return image_urls
 
 # 🧩 HTML image list
 @app.get("/list", response_class=HTMLResponse)
 def list_images():
-    items = get_uploaded_image_urls()
-    html = "<h1>📸 画像一覧</h1><div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1em;'>"
-    grouped = {}
-    for name, url in items:
-        base = name.replace("_small", "").rsplit(".", 1)[0]
-        grouped.setdefault(base, {})
-        if "_small" in name:
-            grouped[base]["small"] = (name, url)
-        else:
-            grouped[base]["original"] = (name, url)
-
-    for base, versions in grouped.items():
-        html += "<div>"
-        if "original" in versions:
-            html += f"<img src='{versions['original'][1]}' width='200'/><br/>"
-        html += "<form action='/delete' method='post'>"
-        if "original" in versions:
-            html += f"<input type='hidden' name='filename' value='{versions['original'][0]}'/>"
-            html += f"<button type='submit'>❌ Delete Original</button><br/>"
-            html += f"<a href='{versions['original'][1]}' target='_blank'>🔗 Original URL</a><br/>"
-        if "small" in versions:
-            html += f"<input type='hidden' name='filename' value='{versions['small'][0]}'/>"
-            html += f"<button type='submit'>❌ Delete Small</button><br/>"
-            html += f"<a href='{versions['small'][1]}' target='_blank'>🔗 Small URL</a>"
-        html += "</form></div>"
+    urls = get_uploaded_image_urls()
+    html = "<h1>📸 画像一覧</h1><div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1em;'>"
+    for url in urls:
+        name = url.split("/")[-1]
+        html += f"""
+        <div>
+            <img src='{url}' width='200'/><br/>
+            <form action='/delete' method='post'>
+                <input type='hidden' name='filename' value='{name}'/>
+                <button type='submit'>❌ 削除</button>
+            </form>
+            <p>{name}</p>
+        </div>
+        """
     html += "</div>"
     return html
 

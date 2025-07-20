@@ -3,7 +3,7 @@
   "altText": "画像が保存されました",
   "contents": {
     "type": "bubble",
-    "size": "hecto",
+    "size": "giga",
     "body": {
       "type": "box",
       "layout": "vertical",

@@ -6,8 +6,8 @@ import base64
 import hashlib
 import hmac
 import time
-from PIL import Image  # 🆕 画像処理
 from io import BytesIO
+from PIL import Image  # 🆕 画像処理
 
 app = FastAPI()
 
@@ -43,7 +43,7 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
             elif event["message"]["type"] == "image":
                 user_id = event["source"]["userId"]
                 message_id = event["message"]["id"]
-                background_tasks.add_task(handle_image, message_id, user_id)  # 🆕 user_idも渡す
+                background_tasks.add_task(handle_image, message_id, user_id)  # 🆕
 
     return JSONResponse(content={"message": "OK"})
 
@@ -65,84 +65,89 @@ def reply_text(user_id: str, msg: str):
     }
     requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
 
-# 🧩 Reply with Flex Message buttons
-def reply_image_buttons(user_id: str, url_original: str, url_small: str):
+# 🧩 Upload to GitHub helper
+def upload_to_github(filename: str, binary_data: bytes):
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename}"
+    commit_msg = f"Upload {filename}"
+    content = base64.b64encode(binary_data).decode()
+    data = {
+        "message": commit_msg,
+        "content": content,
+        "branch": GITHUB_BRANCH
+    }
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    requests.put(url, headers=headers, json=data)
+
+# 🧩 Flex Message
+
+def reply_flex(user_id: str, original_url: str, small_url: str):
     headers = {
         "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
         "Content-Type": "application/json"
     }
-    flex_msg = {
+    flex_message = {
         "type": "flex",
-        "altText": "画像がアップロードされました！",
+        "altText": "画像がアップロードされました",
         "contents": {
             "type": "bubble",
             "body": {
                 "type": "box",
                 "layout": "vertical",
-                "spacing": "md",
                 "contents": [
-                    {"type": "text", "text": "✅ 画像アップロード完了！", "weight": "bold", "size": "lg"},
-                    {"type": "text", "text": "🖼 オリジナル画像", "weight": "bold"},
-                    {"type": "button", "action": {"type": "uri", "label": "🔗 開く", "uri": url_original}, "style": "primary", "height": "sm"},
-                    {"type": "text", "text": "📉 リサイズ画像", "weight": "bold", "margin": "md"},
-                    {"type": "button", "action": {"type": "uri", "label": "🔗 開く", "uri": url_small}, "style": "secondary", "height": "sm"}
+                    {
+                        "type": "button",
+                        "style": "link",
+                        "action": {
+                            "type": "uri",
+                            "label": "📷 オリジナル画像",
+                            "uri": original_url
+                        }
+                    },
+                    {
+                        "type": "button",
+                        "style": "link",
+                        "action": {
+                            "type": "uri",
+                            "label": "🗜 軽量版画像",
+                            "uri": small_url
+                        }
+                    }
                 ]
             }
         }
     }
     payload = {
         "to": user_id,
-        "messages": [flex_msg]
+        "messages": [flex_message]
     }
     requests.post("https://api.line.me/v2/bot/message/push", headers=headers, json=payload)
 
 # 🧩 Handle image message
-def handle_image(message_id: str, user_id: str):  # 🆕 user_id追加
+def handle_image(message_id: str, user_id: str):
     headers = {"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"}
     res = requests.get(f"https://api-data.line.me/v2/bot/message/{message_id}/content", headers=headers)
     if res.status_code != 200:
         return
+
     image_data = res.content
     timestamp = int(time.time())
-    filename_original = f"image_{timestamp}.jpg"
+    filename = f"image_{timestamp}.jpg"
     filename_small = f"image_{timestamp}_small.jpg"
 
-    # GitHubにアップロードするヘッダと共通情報
-    github_headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
-    }
+    upload_to_github(filename, image_data)
 
-    # オリジナルアップロード
-    content_original = base64.b64encode(image_data).decode()
-    url_original = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename_original}"
-    data_original = {
-        "message": f"Upload original {filename_original}",
-        "content": content_original,
-        "branch": GITHUB_BRANCH
-    }
-    requests.put(url_original, headers=github_headers, json=data_original)
-
-    # リサイズ処理（約300KB）
     img = Image.open(BytesIO(image_data))
-    buffer = BytesIO()
-    img.save(buffer, format="JPEG", quality=70, optimize=True)
-    small_data = buffer.getvalue()
-    content_small = base64.b64encode(small_data).decode()
-    url_small = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{UPLOAD_PATH}/{filename_small}"
-    data_small = {
-        "message": f"Upload resized {filename_small}",
-        "content": content_small,
-        "branch": GITHUB_BRANCH
-    }
-    requests.put(url_small, headers=github_headers, json=data_small)
+    img_io = BytesIO()
+    img.save(img_io, format="JPEG", quality=30)
+    img_io.seek(0)
+    upload_to_github(filename_small, img_io.read())
 
-    # URL作成
-    public_url_original = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{filename_original}"
-    public_url_small = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{filename_small}"
-
-    # 🆕 ボタン付きメッセージを返信
-    reply_image_buttons(user_id, public_url_original, public_url_small)
+    original_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{filename}"
+    small_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{GITHUB_BRANCH}/{UPLOAD_PATH}/{filename_small}"
+    reply_flex(user_id, original_url, small_url)
 
 # 🧩 Get image URLs from GitHub
 def get_uploaded_image_urls():

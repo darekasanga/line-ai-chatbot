@@ -70,7 +70,7 @@ def send_flex_message(reply_token: str, preview_url: str, original_url: str, res
     flex_filled = flex_filled.replace("{{post_date}}", post_date)
     flex_filled = flex_filled.replace("{{delete_date}}", delete_date)
 
-        print("📦 Flex送信内容:", flex_filled)  # ← ここを追加
+    print("📦 Flex送信内容:", flex_filled)  # ← ここを追加
 
     payload = {
         "replyToken": reply_token,

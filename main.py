@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
-# ✅ 環境変数の代わりにハードコーディング（安全のため本番では使わないでね）
+# ✅ 環境変数の代わりにハードコーディング（安全のため本番では使わないでね!）
 LINE_CHANNEL_ACCESS_TOKEN = "YOUR_LINE_CHANNEL_ACCESS_TOKEN"
 GITHUB_TOKEN = "YOUR_GITHUB_PERSONAL_ACCESS_TOKEN"
 REPO_NAME = "darekasanga/line-ai-chatbot"

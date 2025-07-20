@@ -29,9 +29,10 @@
         "type": "image",
         "url": "{{preview_url}}",
         "size": "full",
-        "aspectMode": "cover",
-        "aspectRatio": "1.51:1",
-        "margin": "md"
+        "aspectMode": "fit",
+        "aspectRatio": "2:3",
+        "margin": "md",
+        "gravity": "center"
       },
       {
         "type": "box",

@@ -4,6 +4,14 @@ async def callback(request: Request):
         body = await request.json()
         print("LINE受信内容:", body)
 
+        
+        return "ok"
+    except Exception as e:
+        import traceback
+        traceback.print_exc()  # ← ✅ これが重要です！
+        return {"error": str(e)}
+
+        
         events = body.get("events", [])
         for event in events:
             if event["type"] == "message" and event["message"]["type"] == "image":

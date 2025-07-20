@@ -1,11 +1,15 @@
 <!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
-  <head><title>Images</title></head>
-  <body>
-    <h1>Uploaded Images</h1>
-    {% for image in images %}
-      <div><img src="{{ image }}" width="200"></div>
-    {% endfor %}
-  </body>
+<head>
+  <title>Image List</title>
+</head>
+<body>
+  <h1>アップロード済み画像</h1>
+  {% for image in images %}
+    <div style="margin-bottom: 20px;">
+      <img src="{{ image }}" alt="Uploaded Image" width="300" />
+    </div>
+  {% endfor %}
+</body>
 </html>

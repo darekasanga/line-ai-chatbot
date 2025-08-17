@@ -1,0 +1,5 @@
+fastapi
+requests
+Pillow
+python-dotenv
+PyGithub

@@ -4,3 +4,5 @@ Pillow
 python-dotenv
 PyGithub
 uvicorn
+python-multipart
+line-bot-sdk

@@ -1,32 +1,24 @@
-import { middleware, Client } from "@line/bot-sdk";
-
-const config = {
-  channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.CHANNEL_SECRET,
-};
-
-# aaaa
-
-const client = new Client(config);
-
 export default async function handler(req, res) {
+  // Verifyボタンや疎通確認用
+  if (req.method === "GET") {
+    return res.status(200).json({ ok: true, runtime: "node" });
+  }
+
+  // LINEプラットフォームからのPOST本体
   if (req.method === "POST") {
     try {
-      const events = req.body.events;
-      for (const event of events) {
-        if (event.type === "message" && event.message.type === "text") {
-          await client.replyMessage(event.replyToken, {
-            type: "text",
-            text: `Echo: ${event.message.text}`,
-          });
-        }
-      }
-      res.status(200).send("OK");
-    } catch (err) {
-      console.error(err);
-      res.status(500).send("Error");
+      // ここで必要ならログを見る
+      // console.log("headers:", req.headers);
+      // console.log("body:", req.body);
+
+      // まだ署名検証や返信はせず、まず200を返す
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      console.error(e);
+      return res.status(200).json({ ok: true }); // リトライ地獄回避のため200
     }
-  } else {
-    res.status(405).send("Method Not Allowed");
   }
+
+  // それ以外
+  return res.status(405).json({ ok: false, message: "Method Not Allowed" });
 }

@@ -1,31 +1,51 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Kono Draw</title>
+<title>Kono Draw (Comfort Fix)</title>
+
+<!-- 🆕 iPad-friendly display -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
 <style>
-  :root { --ui: #f5f5f7; --ink:#111; --line:#ddd; }
-  html,body { height:100%; margin:0; }
-  body { background:#fff; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  :root { --ui:#f5f5f7; --line:#ddd; --ink:#111; }
+  html, body { height:100%; margin:0; }
+  /* 🆕 Prevent text selection while drawing */
+  html, body, canvas, * {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  body { background:#fff; font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; overflow:hidden; } /* 🆕 stop page scrolling */
+
   .toolbar {
-    position: fixed; top: 0; left: 0; right: 0;
+    position: fixed; inset: 0 0 auto 0;
     display:flex; gap:.5rem; align-items:center; padding:.5rem .75rem;
     background: var(--ui); border-bottom: 1px solid var(--line); z-index: 10;
   }
   .toolbar > * { height: 36px; }
-  .spacer { flex:1; }
   .btn {
     padding:.4rem .7rem; border:1px solid var(--line); background:#fff; border-radius:10px; cursor:pointer;
   }
   .btn[disabled] { opacity:.45; cursor:not-allowed; }
-  #canvas { position: fixed; top: 56px; /* toolbar height */ left:0; right:0; bottom:0; touch-action: none; display:block; }
   .group { display:flex; gap:.5rem; align-items:center; }
-  .label { font-size:.85rem; color:#333; }
+  .spacer { flex:1; }
   input[type="range"] { width:140px; }
+  label { font-size:.85rem; color:#333; }
+
+  /* 🆕 Crucial: block browser gestures on the canvas */
+  #canvas {
+    position: fixed; top: 56px; left:0; right:0; bottom:0;
+    display:block;
+    touch-action: none;              /* no pan/zoom */
+    -ms-touch-action: none;
+  }
 </style>
 </head>
-<body>
+<body oncontextmenu="return false;"> <!-- 🆕 disable long-press context menu -->
+
   <div class="toolbar" id="toolbar">
     <div class="group">
       <button class="btn" id="penBtn" title="Pen (P)">Pen</button>
@@ -33,13 +53,13 @@
       <button class="btn" id="clearBtn" title="Clear">Clear</button>
     </div>
     <div class="group">
-      <span class="label">Color</span>
-      <input type="color" id="color" value="#000000">
+      <label>Color</label>
+      <input type="color" id="color" value="#111111">
     </div>
     <div class="group">
-      <span class="label">Brush</span>
+      <label>Brush</label>
       <input type="range" id="size" min="1" max="48" value="8">
-      <span id="sizeVal" class="label">8</span>
+      <span id="sizeVal" style="font-size:.85rem;color:#333;">8</span>
     </div>
     <div class="group">
       <button class="btn" id="undoBtn" title="Undo (⌘/Ctrl+Z)">Undo</button>
@@ -47,6 +67,8 @@
     </div>
     <div class="spacer"></div>
     <div class="group">
+      <!-- 🆕 Toggle: Pencil only -->
+      <label><input type="checkbox" id="pencilOnly"> 🆕 Pencil only</label>
       <button class="btn" id="saveBtn" title="Save PNG">Save PNG</button>
     </div>
   </div>
@@ -55,10 +77,8 @@
 
 <script>
 (() => {
-  // 🆕 Setup
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
-  const dpr = () => Math.max(1, window.devicePixelRatio || 1);
 
   const colorEl = document.getElementById('color');
   const sizeEl  = document.getElementById('size');
@@ -69,13 +89,14 @@
   const undoBtn = document.getElementById('undoBtn');
   const redoBtn = document.getElementById('redoBtn');
   const saveBtn = document.getElementById('saveBtn');
+  const pencilOnlyEl = document.getElementById('pencilOnly'); // 🆕 Pencil-only checkbox
 
   let isDrawing = false;
   let lastX = 0, lastY = 0;
   let mode = 'pen'; // 'pen' | 'erase'
   let pressureEnabled = true;
 
-  // 🆕 Undo/Redo stacks
+  // 🆕 Undo/Redo
   const UNDO_LIMIT = 30;
   const undoStack = [];
   const redoStack = [];
@@ -86,7 +107,6 @@
       redoStack.length = 0;
       refreshUndoRedoButtons();
     } catch (e) {
-      // If memory error on huge canvas, fall back to nothing
       console.warn('Undo snapshot failed', e);
     }
   }
@@ -95,14 +115,16 @@
     redoBtn.disabled = redoStack.length === 0;
   }
 
-  // 🆕 Canvas sizing with DPR & preserve content
+  // 🆕 High-DPI canvas sizing & preserve content on rotate/resize
   function resizeCanvas() {
     const toolbarH = document.getElementById('toolbar').offsetHeight || 56;
     const cssW = window.innerWidth;
     const cssH = Math.max(0, window.innerHeight - toolbarH);
 
-    const ratio = dpr();
-    const old = ctx.getImageData(0, 0, canvas.width || 1, canvas.height || 1);
+    const ratio = Math.max(1, window.devicePixelRatio || 1);
+
+    const oldW = canvas.width, oldH = canvas.height;
+    const old = (oldW && oldH) ? ctx.getImageData(0, 0, oldW, oldH) : null;
 
     canvas.style.width = cssW + 'px';
     canvas.style.height = cssH + 'px';
@@ -110,31 +132,30 @@
     canvas.height = Math.floor(cssH * ratio);
 
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.imageSmoothingEnabled = true;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    ctx.imageSmoothingEnabled = true;
 
-    // Redraw previous content centered/top-left if sizes changed
-    if (old.width && old.height) {
-      // Put back scaled to new size
-      // Create an offscreen to draw old at 1:1 then scale
+    if (old) {
       const off = document.createElement('canvas');
       off.width = old.width; off.height = old.height;
       off.getContext('2d').putImageData(old, 0, 0);
       ctx.save();
-      ctx.setTransform(1,0,0,1,0,0); // work in CSS pixels
+      ctx.setTransform(1,0,0,1,0,0);
       ctx.drawImage(off, 0, 0, old.width / ratio, old.height / ratio);
       ctx.restore();
-    } else {
-      // white background (optional). Comment out for transparent.
-      // ctx.fillStyle = '#fff'; ctx.fillRect(0,0,canvas.width,canvas.height);
     }
     refreshUndoRedoButtons();
   }
   window.addEventListener('resize', resizeCanvas, { passive: true });
   resizeCanvas();
 
-  // 🆕 Drawing helpers
+  // 🆕 Prevent the page from scrolling while touching the canvas
+  ['touchstart','touchmove','touchend','gesturestart'].forEach(type=>{
+    canvas.addEventListener(type, (e)=> e.preventDefault(), { passive:false });
+  });
+
+  // Drawing helpers
   function getPoint(e){
     const rect = canvas.getBoundingClientRect();
     let x, y;
@@ -149,6 +170,9 @@
   }
 
   function pointerDown(e){
+    // 🆕 If Pencil-only is ON, ignore finger/mouse
+    if (pencilOnlyEl.checked && e.pointerType && e.pointerType !== 'pen') return;
+
     e.preventDefault();
     pushUndo();
     isDrawing = true;
@@ -159,6 +183,8 @@
 
   function pointerMove(e){
     if (!isDrawing) return;
+    if (pencilOnlyEl.checked && e.pointerType && e.pointerType !== 'pen') return;
+
     e.preventDefault();
     const { x, y } = getPoint(e);
     drawLine(lastX, lastY, x, y, e);
@@ -188,50 +214,36 @@
     ctx.restore();
   }
 
-  // 🆕 Pointer events (works for mouse/touch/Apple Pencil)
-  // Prefer Pointer Events if available
-  const supportsPointer = 'onpointerdown' in window;
-  if (supportsPointer){
-    canvas.addEventListener('pointerdown', pointerDown);
-    canvas.addEventListener('pointermove', pointerMove);
-    window.addEventListener('pointerup', pointerUp);
-    // Allow only pen/mouse/touch drawing; prevent gestures scrolling
+  // 🆕 Prefer Pointer Events (mouse/touch/Pencil)
+  if ('onpointerdown' in window){
+    canvas.addEventListener('pointerdown', pointerDown, { passive:false });
+    canvas.addEventListener('pointermove', pointerMove, { passive:false });
+    window.addEventListener('pointerup', pointerUp, { passive:false });
     canvas.style.touchAction = 'none';
   } else {
-    // Fallback to mouse + touch
+    // Fallback
     canvas.addEventListener('mousedown', pointerDown);
     canvas.addEventListener('mousemove', pointerMove);
     window.addEventListener('mouseup', pointerUp);
-
     canvas.addEventListener('touchstart', pointerDown, { passive:false });
     canvas.addEventListener('touchmove', pointerMove, { passive:false });
     window.addEventListener('touchend', pointerUp, { passive:false });
   }
 
-  // 🆕 UI actions
+  // UI actions
   penBtn.onclick = () => { mode = 'pen'; penBtn.disabled = true; eraserBtn.disabled = false; };
   eraserBtn.onclick = () => { mode = 'erase'; eraserBtn.disabled = true; penBtn.disabled = false; };
-  clearBtn.onclick = () => {
-    pushUndo();
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    refreshUndoRedoButtons();
-  };
+  clearBtn.onclick = () => { pushUndo(); ctx.clearRect(0,0,canvas.width,canvas.height); refreshUndoRedoButtons(); };
   undoBtn.onclick = () => {
     if (!undoStack.length) return;
     const state = undoStack.pop();
-    try {
-      redoStack.push(ctx.getImageData(0,0,canvas.width,canvas.height));
-      ctx.putImageData(state, 0, 0);
-    } catch {}
+    try { redoStack.push(ctx.getImageData(0,0,canvas.width,canvas.height)); ctx.putImageData(state, 0, 0); } catch {}
     refreshUndoRedoButtons();
   };
   redoBtn.onclick = () => {
     if (!redoStack.length) return;
     const state = redoStack.pop();
-    try {
-      undoStack.push(ctx.getImageData(0,0,canvas.width,canvas.height));
-      ctx.putImageData(state, 0, 0);
-    } catch {}
+    try { undoStack.push(ctx.getImageData(0,0,canvas.width,canvas.height)); ctx.putImageData(state, 0, 0); } catch {}
     refreshUndoRedoButtons();
   };
   saveBtn.onclick = () => {
@@ -242,22 +254,18 @@
   };
   sizeEl.oninput = () => { sizeVal.textContent = sizeEl.value; };
 
-  // 🆕 Keyboard shortcuts (optional on desktop)
+  // Shortcuts (desktop)
   window.addEventListener('keydown', (e) => {
-    const z = e.key.toLowerCase() === 'z';
-    const y = e.key.toLowerCase() === 'y';
-    if ((e.metaKey || e.ctrlKey) && z && !e.shiftKey) { undoBtn.click(); }
-    else if ((e.metaKey || e.ctrlKey) && (e.shiftKey && z || y)) { redoBtn.click(); }
-    else if (e.key.toLowerCase() === 'p') { penBtn.click(); }
-    else if (e.key.toLowerCase() === 'e') { eraserBtn.click(); }
+    const k = e.key.toLowerCase();
+    if ((e.metaKey || e.ctrlKey) && k === 'z' && !e.shiftKey) { undoBtn.click(); }
+    else if ((e.metaKey || e.ctrlKey) && (e.shiftKey && k === 'z' || k === 'y')) { redoBtn.click(); }
+    else if (k === 'p') { penBtn.click(); }
+    else if (k === 'e') { eraserBtn.click(); }
   });
 
-  // 🆕 Initial UI state
+  // Initial state
   penBtn.disabled = true;
   refreshUndoRedoButtons();
-
-  // 🆕 Optional: turn off pressure if you prefer constant width
-  // pressureEnabled = false;
 })();
 </script>
 </body>
